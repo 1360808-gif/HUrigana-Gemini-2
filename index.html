@@ -7,9 +7,10 @@
     <script src="https://unpkg.com/wanakana"></script>
     <style>
         body {
-            font-family: "UD Digi Kyokasho N-R", "UD デジタル 教科書体 N-R", "Hiragino Sans", "Meiryo", sans-serif;
+            font-family: "UD Digi Kyokasho N-R", "UD デジタル 教科書体 N-R", "UD Digi Kyokasho NK-R", "UD デジタル 教科書体 NK-R", "Hiragino Sans", "Meiryo", sans-serif;
             background-color: #fcfcfc;
             margin: 0;
+            padding: 0;
             display: flex;
             flex-direction: column;
             height: 100vh;
@@ -29,52 +30,21 @@
         .info-pane { flex: 1; display: flex; flex-direction: column; justify-content: center; }
         h1 { color: #1a73e8; margin: 0 0 8px 0; font-size: 1.5rem; }
         .notice { background: white; padding: 10px; border-radius: 10px; border: 2px solid #ffcc00; font-size: 0.85rem; line-height: 1.6; }
+
         .input-pane { flex: 1; display: flex; }
+        textarea { width: 100%; height: 100%; border: 2px solid #a6dcef; border-radius: 12px; padding: 12px; font-family: inherit; font-size: 16px; resize: none; box-sizing: border-box; outline: none; }
 
-        textarea {
-            width: 100%;
-            height: 100%;
-            border: 2px solid #a6dcef;
-            border-radius: 12px;
-            padding: 12px;
-            font-family: inherit;
-            font-size: 16px;
-            resize: none;
-            box-sizing: border-box;
-            outline: none;
-        }
-
-        main {
-            flex: 2.5; /* 表示エリアをさらに広く */
-            padding: 20px 40px;
-            overflow-y: auto;
-            background: white;
-            box-sizing: border-box;
-            position: relative;
-        }
-
-        #output {
-            font-size: 24px;
-            line-height: 2.3;
-            word-break: break-all;
-        }
-
-        rt {
-            color: #d9534f;
-            font-size: 0.5em;
-            cursor: pointer;
-            padding: 0 1px;
-        }
+        main { flex: 2; padding: 20px 40px; overflow-y: auto; background: white; box-sizing: border-box; position: relative; }
+        #output { font-size: 24px; line-height: 2.4; word-break: break-all; }
+        rt { color: #d9534f; font-size: 0.5em; font-weight: bold; cursor: pointer; padding: 0 2px; }
         rt:hover { background: #ffebeb; border-radius: 3px; }
 
         .tools { position: fixed; bottom: 15px; right: 20px; display: flex; gap: 10px; }
-        .btn {
-            background: #ff9f43; color: white; border: none; padding: 10px 20px;
-            border-radius: 50px; font-family: inherit; font-weight: bold;
-            cursor: pointer; box-shadow: 0 3px 0 #e67e22; font-size: 0.9rem;
-        }
+        .btn { background: #ff9f43; color: white; border: none; padding: 10px 20px; border-radius: 50px; font-family: inherit; font-weight: bold; cursor: pointer; box-shadow: 0 3px 0 #e67e22; font-size: 0.9rem; }
+        .btn:active { transform: translateY(2px); box-shadow: none; }
         .btn.copy { background: #1a73e8; box-shadow: 0 3px 0 #0d47a1; }
-        #status { position: absolute; top: 10px; right: 20px; font-size: 12px; color: #1a73e8; font-weight: bold; }
+
+        #status { position: absolute; top: 5px; right: 20px; font-size: 12px; color: #1a73e8; }
     </style>
 </head>
 <body>
@@ -110,56 +80,72 @@
         const status = document.getElementById('status');
         let timer;
 
+        // 特殊な読みの辞書（じしょ）
+        const customDict = {
+            "大ブーム": "だいぶーむ",
+            "爆発的": "ばくはつてき",
+            "積み重なり": "つみかさなり",
+            "2人": "ふたり",
+            "1人": "ひとり"
+        };
+
         const romajiMap = { 'ā': 'aa', 'ī': 'ii', 'ū': 'uu', 'ē': 'ei', 'ō': 'ou' };
-        const segmenter = new Intl.Segmenter('ja-JP', { granularity: 'word' });
 
         input.addEventListener('input', () => {
             clearTimeout(timer);
             status.innerText = "まほうを かけています...";
-            timer = setTimeout(processText, 800);
+            timer = setTimeout(processText, 600);
         });
 
         async function processText() {
-            const text = input.value.trim();
-            if (!text) { output.innerHTML = ""; status.innerText = ""; return; }
+            const text = input.value;
+            if (!text.trim()) { output.innerHTML = ""; status.innerText = ""; return; }
 
-            const segments = Array.from(segmenter.segment(text));
+            // 文の切り方を工夫（数字と漢字のセットなどを優先）
+            const regex = /(?:\d+[人年]|大ブーム|爆発的|積み重なり|[\u4E00-\u9FFF]+)/g;
+            let lastIdx = 0;
             let htmlResult = "";
+            let match;
 
-            // 文脈を保持するため、一定の塊ごとにまとめて解析
-            for (const seg of segments) {
-                const word = seg.segment;
-                // 漢字を含む場合のみAPIを叩く
-                if (/[\u4E00-\u9FFF]/.test(word)) {
-                    const reading = await getSmartReading(word, text);
-                    htmlResult += `<ruby>${word}<rt contenteditable="true">${reading}</rt></ruby>`;
+            while ((match = regex.exec(text)) !== null) {
+                // マッチしなかった間の文字（ひらがな等）を追加
+                htmlResult += text.substring(lastIdx, match.index);
+                
+                const word = match[0];
+                let reading = "";
+
+                // 1. 自作辞書にあるか確認
+                if (customDict[word]) {
+                    reading = customDict[word];
                 } else {
-                    htmlResult += word;
+                    // 2. なければAPIに聞く
+                    reading = await getReading(word);
                 }
+
+                htmlResult += `<ruby>${word}<rt contenteditable="true">${reading}</rt></ruby>`;
+                lastIdx = regex.lastIndex;
             }
+            htmlResult += text.substring(lastIdx);
+            
             output.innerHTML = htmlResult;
             status.innerText = "✅ できたよ！";
         }
 
-        async function getSmartReading(word, fullText) {
+        async function getReading(word) {
             try {
-                // 文脈を考慮させるため、単語だけでなく周辺情報を含めて問い合わせ（簡易的な調整）
                 const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=ja&dt=rm&q=${encodeURIComponent(word)}`;
                 const response = await fetch(url);
                 const data = await response.json();
-                
-                let romaji = "";
-                if (data[0] && data[0][0] && data[0][0][3]) romaji = data[0][0][3];
+                let romaji = (data[0] && data[0][0] && data[0][0][3]) ? data[0][0][3] : "";
                 
                 let fixed = romaji.toLowerCase();
-                // 数字や記号が混ざるのを防ぐ
-                fixed = fixed.replace(/[0-9]/g, '').trim();
-                
                 Object.keys(romajiMap).forEach(key => { fixed = fixed.split(key).join(romajiMap[key]); });
                 let hira = wanakana.toHiragana(fixed);
                 
-                // 「誕生」が「たんじょう」にならず「たん」などになるミスを防ぐ
-                return hira || "";
+                // 「大」単体で「だい」にしたい場合の補正
+                if (word === "大") return "だい";
+                
+                return hira;
             } catch { return ""; }
         }
 
@@ -175,7 +161,10 @@
         }
 
         function clearAll() {
-            input.value = ""; output.innerHTML = ""; status.innerText = ""; input.focus();
+            input.value = "";
+            output.innerHTML = "";
+            status.innerText = "";
+            input.focus();
         }
     </script>
 </body>
