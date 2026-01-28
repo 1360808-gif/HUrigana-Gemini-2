@@ -81,6 +81,7 @@
         let timer;
 
         const romajiMap = { 'ā': 'aa', 'ī': 'ii', 'ū': 'uu', 'ē': 'ei', 'ō': 'ou' };
+        const segmenter = new Intl.Segmenter('ja-JP', { granularity: 'word' });
 
         input.addEventListener('input', () => {
             clearTimeout(timer);
@@ -92,33 +93,32 @@
             const text = input.value;
             if (!text.trim()) { output.innerHTML = ""; status.innerText = ""; return; }
 
-            // ブラウザのセグメンターを使用して、意味のある「言葉」の単位で切り分ける
-            const segmenter = new Intl.Segmenter('ja-JP', { granularity: 'word' });
             const segments = Array.from(segmenter.segment(text));
-            
             let htmlResult = "";
 
             for (const seg of segments) {
                 const word = seg.segment;
-                // 漢字または数字が含まれている場合
+                // 漢字または数字が含まれる場合のみ処理
                 if (/[\u4E00-\u9FFF\d]/.test(word)) {
-                    let reading = await getReadingWithContext(word);
+                    let reading = await getReading(word);
                     
-                    // 送り仮名（ひらがな部分）を分離して、漢字部分だけにルビを振る
-                    const kanjiMatch = word.match(/^([\u4E00-\u9FFF\d]+)(.*)$/);
-                    if (kanjiMatch) {
-                        const kanjiPart = kanjiMatch[1];
-                        const hiraganaPart = kanjiMatch[2];
-                        
-                        // 読みからも後ろのひらがな部分を削る
-                        let pureReading = reading;
-                        if (reading.endsWith(hiraganaPart)) {
-                            pureReading = reading.substring(0, reading.length - hiraganaPart.length);
-                        }
-                        
-                        htmlResult += `<ruby>${kanjiPart}<rt contenteditable="true">${pureReading}</rt></ruby>${hiraganaPart}`;
+                    // 送り仮名を分離するロジック
+                    // 1. 言葉の後ろからひらがな・カタカナが一致する部分を探す
+                    let i = word.length - 1;
+                    let j = reading.length - 1;
+                    while (i >= 0 && j >= 0 && word[i] === reading[j] && !/[\u4E00-\u9FFF]/.test(word[i])) {
+                        i--;
+                        j--;
+                    }
+                    
+                    const kanjiPart = word.substring(0, i + 1);
+                    const okuriganaPart = word.substring(i + 1);
+                    const kanjiReading = reading.substring(0, j + 1);
+
+                    if (kanjiPart) {
+                        htmlResult += `<ruby>${kanjiPart}<rt contenteditable="true">${kanjiReading}</rt></ruby>${okuriganaPart}`;
                     } else {
-                        htmlResult += `<ruby>${word}<rt contenteditable="true">${reading}</rt></ruby>`;
+                        htmlResult += word;
                     }
                 } else {
                     htmlResult += word;
@@ -129,9 +129,8 @@
             status.innerText = "✅ できたよ！";
         }
 
-        async function getReadingWithContext(word) {
+        async function getReading(word) {
             try {
-                // 単語だけでなく、前後の文字を含めた文脈でAPIに問い合わせる
                 const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=ja&dt=rm&q=${encodeURIComponent(word)}`;
                 const response = await fetch(url);
                 const data = await response.json();
