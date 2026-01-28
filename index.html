@@ -3,85 +3,216 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ふりがなメーカー | 修正機能付き</title>
+    <title>ふりがなマジック！</title>
     <script src="https://unpkg.com/wanakana"></script>
     <style>
-        body { font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background: #f0f2f5; line-height: 1.6; }
-        .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); }
-        h1 { font-size: 1.5rem; color: #1a73e8; text-align: center; margin-bottom: 20px; }
-        textarea { width: 100%; height: 120px; padding: 15px; border: 2px solid #ddd; border-radius: 12px; font-size: 18px; margin-bottom: 10px; }
-        #output { font-size: 24px; line-height: 3.5; border-top: 1px solid #eee; margin-top: 20px; padding-top: 20px; }
-        
-        /* ふりがな（rt）の設定 */
-        rt { color: #ff4757; font-size: 0.5em; font-weight: bold; cursor: pointer; background: rgba(255, 71, 87, 0.05); padding: 0 2px; border-radius: 3px; }
-        rt:hover { background: #ff4757; color: white; }
-        rt:empty::before { content: "??"; opacity: 0.3; }
+        /* UDデジタル教科書体を最優先にする設定 */
+        body {
+            font-family: "UD Digi Kyokasho N-R", "UD デジタル 教科書体 N-R", "UD Digi Kyokasho NK-R", "UD デジタル 教科書体 NK-R", "Hiragino Sans", "Meiryo", sans-serif;
+            background-color: #fff9e6; /* 温かみのあるクリーム色 */
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
 
-        .hint { font-size: 12px; color: #666; text-align: center; margin-bottom: 20px; }
-        .loading { display: none; color: #1a73e8; text-align: center; font-weight: bold; }
+        h1 {
+            color: #2d5d9a;
+            font-size: 2.2rem;
+            margin-bottom: 20px;
+            letter-spacing: 0.1em;
+        }
+
+        .main-container {
+            display: flex;
+            width: 100%;
+            max-width: 1100px;
+            gap: 25px;
+            flex-wrap: wrap;
+        }
+
+        .box {
+            flex: 1;
+            min-width: 320px;
+            background: white;
+            border: 5px solid #a6dcef; /* 空色のワク */
+            border-radius: 25px;
+            padding: 25px;
+            box-shadow: 0 8px 0 #85b0bf;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .box-title {
+            font-weight: bold;
+            color: #2d5d9a;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+            border-bottom: 2px solid #a6dcef;
+            padding-bottom: 5px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 300px;
+            border: none;
+            /* 入力欄も教科書体 */
+            font-family: inherit;
+            font-size: 20px;
+            resize: none;
+            outline: none;
+            line-height: 1.6;
+            background-color: #fafafa;
+            border-radius: 10px;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        #output {
+            width: 100%;
+            height: 300px;
+            overflow-y: auto;
+            font-size: 28px; /* 文字をさらに大きく */
+            line-height: 3.5;
+            word-break: break-all;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+
+        /* ふりがなのデザインを教科書体に合わせる */
+        rt {
+            color: #d9534f;
+            font-size: 0.5em;
+            font-weight: normal;
+            cursor: pointer;
+            /* 教科書体は少し細めなので、ルビもスッキリさせる */
+        }
+        rt:hover { background: #ffebeb; border-radius: 4px; }
+
+        .footer-tools {
+            margin-top: 30px;
+            display: flex;
+            gap: 20px;
+        }
+
+        .btn {
+            background: #ff9f43;
+            color: white;
+            border: none;
+            padding: 15px 35px;
+            border-radius: 15px;
+            font-size: 1.1rem;
+            font-family: inherit;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 5px 0 #e67e22;
+            transition: 0.1s;
+        }
+        .btn:active { transform: translateY(4px); box-shadow: none; }
+        .btn.copy { background: #2d5d9a; box-shadow: 0 5px 0 #1a3a5a; }
+
+        #loading {
+            color: #2d5d9a;
+            font-size: 16px;
+            margin-top: 10px;
+            height: 24px;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
 
-<div class="card">
-    <h1>ふりがなメーカー</h1>
-    <p class="hint">※ふりがなが間違っている場合は、<strong>赤い文字をクリック</strong>して直接直せます</p>
-    <textarea id="input" placeholder="文章を貼り付けてください..."></textarea>
-    <div id="loading" class="loading">解析中...</div>
-    <div id="output"></div>
-</div>
+    <h1>📝 ふりがなマジック 📝</h1>
 
-<script>
-    const input = document.getElementById('input');
-    const output = document.getElementById('output');
-    const loading = document.getElementById('loading');
-    let timer;
+    <div class="main-container">
+        <div class="box">
+            <div class="box-title">ここに入力（にゅうりょく）してね</div>
+            <textarea id="input" placeholder="漢字をここに貼ってね。"></textarea>
+            <div id="loading"></div>
+        </div>
 
-    const romajiMap = { 'ā': 'aa', 'ī': 'ii', 'ū': 'uu', 'ē': 'ei', 'ō': 'ou' };
-    const segmenter = new Intl.Segmenter('ja-JP', { granularity: 'word' });
+        <div class="box">
+            <div class="box-title">ふりがながついたよ！</div>
+            <div id="output"></div>
+        </div>
+    </div>
 
-    input.addEventListener('input', () => {
-        clearTimeout(timer);
-        timer = setTimeout(processText, 700);
-    });
+    <div class="footer-tools">
+        <button class="btn copy" onclick="copyOutput()">📋 ふりがなつきでコピー</button>
+        <button class="btn" onclick="clearAll()">🔄 ぜんぶ消す</button>
+    </div>
 
-    async function processText() {
-        const text = input.value.trim();
-        if (!text) { output.innerHTML = ""; return; }
+    <script>
+        const input = document.getElementById('input');
+        const output = document.getElementById('output');
+        const loading = document.getElementById('loading');
+        let timer;
 
-        loading.style.display = "block";
-        const segments = Array.from(segmenter.segment(text));
-        let htmlResult = "";
+        const romajiMap = { 'ā': 'aa', 'ī': 'ii', 'ū': 'uu', 'ē': 'ei', 'ō': 'ou' };
+        const segmenter = new Intl.Segmenter('ja-JP', { granularity: 'word' });
 
-        for (const seg of segments) {
-            const word = seg.segment;
-            // 漢字・数字が含まれる場合にふりがなを取得
-            if (/[\u4E00-\u9FFF\d]/.test(word)) {
-                const reading = await getReading(word);
-                // contenteditable="true" をつけることでクリックして書き換え可能にする
-                htmlResult += `<ruby>${word}<rt contenteditable="true">${reading}</rt></ruby>`;
-            } else {
-                htmlResult += word;
+        input.addEventListener('input', () => {
+            clearTimeout(timer);
+            loading.innerText = "✨ まほうを かけています...";
+            timer = setTimeout(processText, 600);
+        });
+
+        async function processText() {
+            const text = input.value.trim();
+            if (!text) { 
+                output.innerHTML = ""; 
+                loading.innerText = "";
+                return; 
             }
-        }
-        
-        output.innerHTML = htmlResult;
-        loading.style.display = "none";
-    }
 
-    async function getReading(word) {
-        try {
-            const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=ja&dt=rm&q=${encodeURIComponent(word)}`;
-            const response = await fetch(url);
-            const data = await response.json();
-            let romaji = (data[0] && data[0][0] && data[0][0][3]) ? data[0][0][3] : "";
+            const segments = Array.from(segmenter.segment(text));
+            let htmlResult = "";
+
+            for (const seg of segments) {
+                const word = seg.segment;
+                if (/[\u4E00-\u9FFF\d]/.test(word)) {
+                    const reading = await getReading(word);
+                    htmlResult += `<ruby>${word}<rt contenteditable="true">${reading}</rt></ruby>`;
+                } else {
+                    htmlResult += word;
+                }
+            }
             
-            let fixed = romaji.toLowerCase();
-            Object.keys(romajiMap).forEach(key => { fixed = fixed.split(key).join(romajiMap[key]); });
-            return wanakana.toHiragana(fixed);
-        } catch { return ""; }
-    }
-</script>
+            output.innerHTML = htmlResult;
+            loading.innerText = "✅ できました！";
+        }
 
+        async function getReading(word) {
+            try {
+                const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=ja&dt=rm&q=${encodeURIComponent(word)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                let romaji = (data[0] && data[0][0] && data[0][0][3]) ? data[0][0][3] : "";
+                
+                let fixed = romaji.toLowerCase();
+                Object.keys(romajiMap).forEach(key => { fixed = fixed.split(key).join(romajiMap[key]); });
+                return wanakana.toHiragana(fixed);
+            } catch { return ""; }
+        }
+
+        function copyOutput() {
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(output);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            document.execCommand('copy');
+            selection.removeAllRanges();
+            alert("コピーしたよ！");
+        }
+
+        function clearAll() {
+            input.value = "";
+            output.innerHTML = "";
+            loading.innerText = "";
+            input.focus();
+        }
+    </script>
 </body>
 </html>
