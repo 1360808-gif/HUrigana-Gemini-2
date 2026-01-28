@@ -6,139 +6,153 @@
     <title>ふりがなマジック！</title>
     <script src="https://unpkg.com/wanakana"></script>
     <style>
-        /* UDデジタル教科書体を最優先にする設定 */
+        /* UDデジタル教科書体を最優先 */
         body {
             font-family: "UD Digi Kyokasho N-R", "UD デジタル 教科書体 N-R", "UD Digi Kyokasho NK-R", "UD デジタル 教科書体 NK-R", "Hiragino Sans", "Meiryo", sans-serif;
-            background-color: #fff9e6; /* 温かみのあるクリーム色 */
+            background-color: #fcfcfc;
             margin: 0;
-            padding: 20px;
+            padding: 0;
             display: flex;
             flex-direction: column;
-            align-items: center;
+            height: 100vh; /* 画面ぴったりに使う */
+            color: #333;
+        }
+
+        /* --- 上の部分 (1) --- */
+        header {
+            flex: 1;
+            display: flex;
+            padding: 20px;
+            gap: 20px;
+            background-color: #eef9ff;
+            border-bottom: 3px solid #a6dcef;
+            box-sizing: border-box;
+        }
+
+        /* タイトルと注意書き */
+        .info-pane {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
         }
 
         h1 {
-            color: #2d5d9a;
-            font-size: 2.2rem;
-            margin-bottom: 20px;
-            letter-spacing: 0.1em;
+            color: #1a73e8;
+            margin: 0 0 10px 0;
+            font-size: 1.8rem;
         }
 
-        .main-container {
-            display: flex;
-            width: 100%;
-            max-width: 1100px;
-            gap: 25px;
-            flex-wrap: wrap;
-        }
-
-        .box {
-            flex: 1;
-            min-width: 320px;
+        .notice {
             background: white;
-            border: 5px solid #a6dcef; /* 空色のワク */
-            border-radius: 25px;
-            padding: 25px;
-            box-shadow: 0 8px 0 #85b0bf;
+            padding: 12px;
+            border-radius: 10px;
+            border: 2px solid #ffcc00;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        /* 入力エリア */
+        .input-pane {
+            flex: 1;
             display: flex;
             flex-direction: column;
-        }
-
-        .box-title {
-            font-weight: bold;
-            color: #2d5d9a;
-            margin-bottom: 15px;
-            font-size: 1.3rem;
-            border-bottom: 2px solid #a6dcef;
-            padding-bottom: 5px;
         }
 
         textarea {
             width: 100%;
-            height: 300px;
-            border: none;
-            /* 入力欄も教科書体 */
+            height: 100%;
+            border: 2px solid #a6dcef;
+            border-radius: 12px;
+            padding: 15px;
             font-family: inherit;
-            font-size: 20px;
+            font-size: 18px;
             resize: none;
-            outline: none;
-            line-height: 1.6;
-            background-color: #fafafa;
-            border-radius: 10px;
-            padding: 10px;
             box-sizing: border-box;
+            outline: none;
+        }
+
+        /* --- 下の部分 (2) --- */
+        main {
+            flex: 2;
+            padding: 25px;
+            overflow-y: auto;
+            background: white;
+            box-sizing: border-box;
+            position: relative;
         }
 
         #output {
-            width: 100%;
-            height: 300px;
-            overflow-y: auto;
-            font-size: 28px; /* 文字をさらに大きく */
-            line-height: 3.5;
+            font-size: 32px; /* 読む部分なのでさらに大きく */
+            line-height: 3.8;
             word-break: break-all;
-            padding: 10px;
-            box-sizing: border-box;
         }
 
-        /* ふりがなのデザインを教科書体に合わせる */
+        /* ルビのデザイン */
         rt {
             color: #d9534f;
             font-size: 0.5em;
             font-weight: normal;
             cursor: pointer;
-            /* 教科書体は少し細めなので、ルビもスッキリさせる */
+            padding: 0 3px;
         }
         rt:hover { background: #ffebeb; border-radius: 4px; }
 
-        .footer-tools {
-            margin-top: 30px;
+        /* ボタンなど */
+        .tools {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
             display: flex;
-            gap: 20px;
+            gap: 10px;
         }
 
         .btn {
             background: #ff9f43;
             color: white;
             border: none;
-            padding: 15px 35px;
-            border-radius: 15px;
-            font-size: 1.1rem;
+            padding: 12px 25px;
+            border-radius: 50px;
             font-family: inherit;
             font-weight: bold;
             cursor: pointer;
-            box-shadow: 0 5px 0 #e67e22;
-            transition: 0.1s;
+            box-shadow: 0 4px 0 #e67e22;
+            font-size: 1rem;
         }
-        .btn:active { transform: translateY(4px); box-shadow: none; }
-        .btn.copy { background: #2d5d9a; box-shadow: 0 5px 0 #1a3a5a; }
+        .btn:active { transform: translateY(2px); box-shadow: none; }
+        .btn.copy { background: #1a73e8; box-shadow: 0 4px 0 #0d47a1; }
 
-        #loading {
-            color: #2d5d9a;
-            font-size: 16px;
-            margin-top: 10px;
-            height: 24px;
+        #status {
+            position: absolute;
+            top: 5px;
+            right: 20px;
+            font-size: 14px;
+            color: #1a73e8;
             font-weight: bold;
         }
     </style>
 </head>
 <body>
 
-    <h1>📝 ふりがなマジック 📝</h1>
-
-    <div class="main-container">
-        <div class="box">
-            <div class="box-title">ここに入力（にゅうりょく）してね</div>
-            <textarea id="input" placeholder="漢字をここに貼ってね。"></textarea>
-            <div id="loading"></div>
+    <header>
+        <div class="info-pane">
+            <h1>✨ ふりがなマジック</h1>
+            <div class="notice">
+                ⚠️ <strong>ちゅうい：</strong>つけられた ふりがなは、まちがっているときがあります。おかしいなと思ったら、先生や友達に聞いてみてね。<br>
+                💡 <strong>ヒント：</strong>まちがっているふりがなは、クリックすると自分でなおすこともできるよ！
+            </div>
         </div>
-
-        <div class="box">
-            <div class="box-title">ふりがながついたよ！</div>
-            <div id="output"></div>
+        <div class="input-pane">
+            <textarea id="input" placeholder="ここに、ふりがなをつけたい言葉（ことば）をはりつけてね！"></textarea>
         </div>
-    </div>
+    </header>
 
-    <div class="footer-tools">
+    <main>
+        <div id="status"></div>
+        <div id="output"></div>
+    </main>
+
+    <div class="tools">
         <button class="btn copy" onclick="copyOutput()">📋 ふりがなつきでコピー</button>
         <button class="btn" onclick="clearAll()">🔄 ぜんぶ消す</button>
     </div>
@@ -146,7 +160,7 @@
     <script>
         const input = document.getElementById('input');
         const output = document.getElementById('output');
-        const loading = document.getElementById('loading');
+        const status = document.getElementById('status');
         let timer;
 
         const romajiMap = { 'ā': 'aa', 'ī': 'ii', 'ū': 'uu', 'ē': 'ei', 'ō': 'ou' };
@@ -154,7 +168,7 @@
 
         input.addEventListener('input', () => {
             clearTimeout(timer);
-            loading.innerText = "✨ まほうを かけています...";
+            status.innerText = "✨ まほうを かけています...";
             timer = setTimeout(processText, 600);
         });
 
@@ -162,7 +176,7 @@
             const text = input.value.trim();
             if (!text) { 
                 output.innerHTML = ""; 
-                loading.innerText = "";
+                status.innerText = "";
                 return; 
             }
 
@@ -180,7 +194,7 @@
             }
             
             output.innerHTML = htmlResult;
-            loading.innerText = "✅ できました！";
+            status.innerText = "✅ できたよ！";
         }
 
         async function getReading(word) {
@@ -204,13 +218,13 @@
             selection.addRange(range);
             document.execCommand('copy');
             selection.removeAllRanges();
-            alert("コピーしたよ！");
+            alert("ふりがなつきでコピーしたよ！");
         }
 
         function clearAll() {
             input.value = "";
             output.innerHTML = "";
-            loading.innerText = "";
+            status.innerText = "";
             input.focus();
         }
     </script>
