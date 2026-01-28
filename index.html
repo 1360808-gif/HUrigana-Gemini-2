@@ -3,79 +3,91 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ふりがなメーカー (軽量版)</title>
-    <script src="https://unpkg.com/wanakana"></script>
+    <title>ふりがなメーカー | 読み込み可視化版</title>
+    <script src="https://cdn.jsdelivr.net/npm/kuroshiro@1.2.0/dist/kuroshiro.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/kuroshiro-analyzer-kuromoji@1.1.0/dist/kuroshiro-analyzer-kuromoji.min.js"></script>
     <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; background: #f4f4f9; }
-        .card { background: white; padding: 20px; border-radius: 10px; shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        textarea { width: 100%; height: 100px; margin-bottom: 20px; border: 1px solid #ccc; border-radius: 5px; padding: 10px; font-size: 16px; }
-        #output { font-size: 24px; line-height: 2.5; background: #fff; min-height: 100px; }
-        rt { color: #ff5e57; font-size: 0.6em; }
+        body { font-family: sans-serif; max-width: 700px; margin: 40px auto; padding: 20px; background: #f8f9fa; }
+        .box { background: white; padding: 25px; border-radius: 12px; shadow: 0 4px 15px rgba(0,0,0,0.1); border: 1px solid #eee; }
+        
+        /* 状態インジケーター */
+        #status-bar { padding: 10px; margin-bottom: 20px; border-radius: 6px; font-weight: bold; text-align: center; font-size: 14px; }
+        .loading { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+        .ready { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+
+        textarea { width: 100%; height: 120px; padding: 12px; border: 2px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
+        textarea:disabled { background: #f0f0f0; cursor: not-allowed; }
+        
+        #output { margin-top: 30px; min-height: 100px; line-height: 2.8; font-size: 22px; border-top: 1px solid #eee; padding-top: 20px; }
+        rt { color: #d63031; font-size: 0.5em; }
+        .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #856404; border-top: 2px solid transparent; border-radius: 50%; animate: spin 1s linear infinite; margin-right: 8px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 
-<div class="card">
+<div class="box">
     <h2>ふりがなメーカー</h2>
-    <textarea id="input" placeholder="ここに貼り付けてください..."></textarea>
+    
+    <div id="status-bar" class="loading">
+        <span class="spinner"></span> 辞書データ（15MB）をダウンロード中...しばらくお待ちください
+    </div>
+
+    <textarea id="input" placeholder="文章を貼り付けると自動で変換します" disabled></textarea>
+    
     <div id="output"></div>
 </div>
 
 <script>
-    const input = document.getElementById('input');
-    const output = document.getElementById('output');
-
-    // ブラウザ標準の解析機能（Intl.Segmenter）が使えるか確認
-    if (!window.Intl || !window.Intl.Segmenter) {
-        output.innerHTML = "お使いのブラウザが古いため動作しません。最新のChrome等でお試しください。";
-    }
-
-    const segmenter = new Intl.Segmenter('ja-JP', { granularity: 'word' });
-
-    input.addEventListener('input', () => {
-        const text = input.value;
-        if (!text) { output.innerHTML = ""; return; }
-
-        const segments = segmenter.segment(text);
-        let resultHtml = "";
-
-        for (const segment of segments) {
-            const word = segment.segment;
-            
-            // 漢字が含まれているかチェック
-            if (/[\u4E00-\u9FFF]/.test(word)) {
-                // 読みを推測（※簡易的な推測になるため、複雑な語彙はGitHub Pages上での確認を推奨）
-                // ここでは「読み」を取得するためにGoogleのAPIを補助的に使うか、
-                // もしくは入力された漢字をそのままルビ構造にします。
-                resultHtml += `<ruby>${word}<rt>（読み）</rt></ruby>`;
-            } else {
-                resultHtml += word;
-            }
-        }
-        
-        // 注：ブラウザ標準機能だけでは「正確な読み」の取得に限界があるため
-        // 最も確実な「Yahoo!かな振替API」等を使わない簡易版として表示します。
-        // 正確な読みが必要な場合は、下記の「修正版」を試してください。
-        updateFurigana(text);
+    const kuroshiro = new Kuroshiro();
+    const analyzer = new KuroshiroAnalyzer({
+        // 辞書データをインターネット上の公開サーバーから直接取得する設定
+        dictPath: "https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict"
     });
 
-    async function updateFurigana(text) {
-        // Google翻訳の仕組みを応用した、より軽量な取得方法
-        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=ja&dt=rm&q=${encodeURIComponent(text)}`;
-        
+    const statusBar = document.getElementById('status-bar');
+    const inputArea = document.getElementById('input');
+    const outputArea = document.getElementById('output');
+
+    // 1. 初期化処理
+    async function setup() {
         try {
-            const response = await fetch(url);
-            const data = await response.json();
-            // data[1] にローマ字読みが入るので、それをひらがなに戻す処理
-            const romaji = data[0][1] ? data[0][1][3] : "";
-            if (romaji) {
-                const hiragana = wanakana.toHiragana(romaji);
-                output.innerHTML = `<ruby>${text}<rt>${hiragana}</rt></ruby>`;
-            }
-        } catch (e) {
-            output.innerHTML = "読み込み中、またはエラーです。";
+            console.log("Initializing...");
+            await kuroshiro.init(analyzer);
+            
+            // 成功したら表示を切り替え
+            statusBar.innerText = "✅ 準備完了！文章を入力してください";
+            statusBar.className = "ready";
+            inputArea.disabled = false; // 入力を許可
+            inputArea.focus();
+        } catch (err) {
+            console.error(err);
+            statusBar.innerText = "❌ 読み込み失敗。ページを更新するか、通信環境を確認してください。";
+            statusBar.className = "error";
         }
     }
+
+    // 2. 変換処理
+    inputArea.addEventListener('input', async () => {
+        const val = inputArea.value;
+        if (!val) {
+            outputArea.innerHTML = "";
+            return;
+        }
+
+        try {
+            const result = await kuroshiro.convert(val, {
+                mode: "okurigana",
+                to: "hiragana"
+            });
+            outputArea.innerHTML = result;
+        } catch (e) {
+            console.error("Conversion error:", e);
+        }
+    });
+
+    setup();
 </script>
 
 </body>
