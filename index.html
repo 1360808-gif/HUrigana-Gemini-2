@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ふりがなメーカー | 完成版</title>
+    <title>ふりがなメーカー | 最終調整版</title>
     <script src="https://unpkg.com/wanakana"></script>
     <style>
-        body { font-family: 'Helvetica Neue', Arial, sans-serif; max-width: 700px; margin: 40px auto; padding: 20px; background: #f0f2f5; }
+        body { font-family: sans-serif; max-width: 700px; margin: 40px auto; padding: 20px; background: #f0f2f5; }
         .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); }
         h1 { font-size: 1.8rem; color: #1a73e8; margin-bottom: 25px; text-align: center; font-weight: 800; }
         textarea { width: 100%; height: 140px; padding: 15px; border: 2px solid #e0e0e0; border-radius: 12px; box-sizing: border-box; font-size: 18px; line-height: 1.6; }
@@ -20,7 +20,7 @@
 <div class="card">
     <h1>ふりがなメーカー</h1>
     <textarea id="input" placeholder="文章を貼り付けてください..."></textarea>
-    <div id="loading" class="loading-text">解析中...</div>
+    <div id="loading" class="loading-text">読みを取得中...</div>
     <div id="output"></div>
 </div>
 
@@ -31,6 +31,11 @@
     let timer;
 
     const segmenter = new Intl.Segmenter('ja-JP', { granularity: 'word' });
+
+    // 特殊な記号付きローマ字を、日本語らしい綴りに変換するマップ
+    const romajiMap = {
+        'ā': 'aa', 'ī': 'ii', 'ū': 'uu', 'ē': 'ei', 'ō': 'ou'
+    };
 
     input.addEventListener('input', () => {
         clearTimeout(timer);
@@ -54,19 +59,19 @@
                     const response = await fetch(url);
                     const data = await response.json();
                     
-                    // APIの結果から読み（ローマ字）を探す
                     let rawReading = "";
                     if (data[0]) {
-                        data[0].forEach(parts => {
-                            if (parts[3]) rawReading += parts[3];
-                        });
+                        data[0].forEach(parts => { if (parts[3]) rawReading += parts[3]; });
                     }
 
                     if (rawReading) {
-                        // 【ここが重要】特殊な記号付きローマ字（ō, ū等）を通常のアルファベットに置換
-                        const cleanRomaji = rawReading.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-                        // wanakanaでひらがなに変換
-                        const hira = wanakana.toHiragana(cleanRomaji);
+                        // 伸ばす記号(ō)を(ou)などに置換して、読み漏らしを防ぐ
+                        let fixedRomaji = rawReading.toLowerCase();
+                        Object.keys(romajiMap).forEach(key => {
+                            fixedRomaji = fixedRomaji.split(key).join(romajiMap[key]);
+                        });
+
+                        const hira = wanakana.toHiragana(fixedRomaji);
                         finalHtml += `<ruby>${word}<rt>${hira}</rt></ruby>`;
                     } else {
                         finalHtml += word;
