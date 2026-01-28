@@ -80,15 +80,6 @@
         const status = document.getElementById('status');
         let timer;
 
-        // 特殊な読みの辞書（じしょ）
-        const customDict = {
-            "大ブーム": "だいぶーむ",
-            "爆発的": "ばくはつてき",
-            "積み重なり": "つみかさなり",
-            "2人": "ふたり",
-            "1人": "ひとり"
-        };
-
         const romajiMap = { 'ā': 'aa', 'ī': 'ii', 'ū': 'uu', 'ē': 'ei', 'ō': 'ou' };
 
         input.addEventListener('input', () => {
@@ -101,51 +92,54 @@
             const text = input.value;
             if (!text.trim()) { output.innerHTML = ""; status.innerText = ""; return; }
 
-            // 文の切り方を工夫（数字と漢字のセットなどを優先）
-            const regex = /(?:\d+[人年]|大ブーム|爆発的|積み重なり|[\u4E00-\u9FFF]+)/g;
-            let lastIdx = 0;
+            // ブラウザのセグメンターを使用して、意味のある「言葉」の単位で切り分ける
+            const segmenter = new Intl.Segmenter('ja-JP', { granularity: 'word' });
+            const segments = Array.from(segmenter.segment(text));
+            
             let htmlResult = "";
-            let match;
 
-            while ((match = regex.exec(text)) !== null) {
-                // マッチしなかった間の文字（ひらがな等）を追加
-                htmlResult += text.substring(lastIdx, match.index);
-                
-                const word = match[0];
-                let reading = "";
-
-                // 1. 自作辞書にあるか確認
-                if (customDict[word]) {
-                    reading = customDict[word];
+            for (const seg of segments) {
+                const word = seg.segment;
+                // 漢字または数字が含まれている場合
+                if (/[\u4E00-\u9FFF\d]/.test(word)) {
+                    let reading = await getReadingWithContext(word);
+                    
+                    // 送り仮名（ひらがな部分）を分離して、漢字部分だけにルビを振る
+                    const kanjiMatch = word.match(/^([\u4E00-\u9FFF\d]+)(.*)$/);
+                    if (kanjiMatch) {
+                        const kanjiPart = kanjiMatch[1];
+                        const hiraganaPart = kanjiMatch[2];
+                        
+                        // 読みからも後ろのひらがな部分を削る
+                        let pureReading = reading;
+                        if (reading.endsWith(hiraganaPart)) {
+                            pureReading = reading.substring(0, reading.length - hiraganaPart.length);
+                        }
+                        
+                        htmlResult += `<ruby>${kanjiPart}<rt contenteditable="true">${pureReading}</rt></ruby>${hiraganaPart}`;
+                    } else {
+                        htmlResult += `<ruby>${word}<rt contenteditable="true">${reading}</rt></ruby>`;
+                    }
                 } else {
-                    // 2. なければAPIに聞く
-                    reading = await getReading(word);
+                    htmlResult += word;
                 }
-
-                htmlResult += `<ruby>${word}<rt contenteditable="true">${reading}</rt></ruby>`;
-                lastIdx = regex.lastIndex;
             }
-            htmlResult += text.substring(lastIdx);
             
             output.innerHTML = htmlResult;
             status.innerText = "✅ できたよ！";
         }
 
-        async function getReading(word) {
+        async function getReadingWithContext(word) {
             try {
+                // 単語だけでなく、前後の文字を含めた文脈でAPIに問い合わせる
                 const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=ja&dt=rm&q=${encodeURIComponent(word)}`;
                 const response = await fetch(url);
                 const data = await response.json();
                 let romaji = (data[0] && data[0][0] && data[0][0][3]) ? data[0][0][3] : "";
                 
-                let fixed = romaji.toLowerCase();
+                let fixed = romaji.toLowerCase().replace(/-/g, '');
                 Object.keys(romajiMap).forEach(key => { fixed = fixed.split(key).join(romajiMap[key]); });
-                let hira = wanakana.toHiragana(fixed);
-                
-                // 「大」単体で「だい」にしたい場合の補正
-                if (word === "大") return "だい";
-                
-                return hira;
+                return wanakana.toHiragana(fixed);
             } catch { return ""; }
         }
 
