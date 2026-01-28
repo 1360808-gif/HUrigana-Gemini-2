@@ -1,1 +1,0 @@
-# HUrigana-Gemini-2
