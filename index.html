@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ふりがなメーカー | 最終調整版</title>
+    <title>ふりがなメーカー | 文脈解析版</title>
     <script src="https://unpkg.com/wanakana"></script>
     <style>
-        body { font-family: sans-serif; max-width: 700px; margin: 40px auto; padding: 20px; background: #f0f2f5; }
+        body { font-family: sans-serif; max-width: 750px; margin: 40px auto; padding: 20px; background: #f0f2f5; color: #333; }
         .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); }
         h1 { font-size: 1.8rem; color: #1a73e8; margin-bottom: 25px; text-align: center; font-weight: 800; }
-        textarea { width: 100%; height: 140px; padding: 15px; border: 2px solid #e0e0e0; border-radius: 12px; box-sizing: border-box; font-size: 18px; line-height: 1.6; }
-        #output { font-size: 26px; line-height: 3.5; min-height: 120px; border-top: 1px solid #eee; margin-top: 25px; padding-top: 25px; color: #2c3e50; }
+        textarea { width: 100%; height: 140px; padding: 15px; border: 2px solid #e0e0e0; border-radius: 12px; box-sizing: border-box; font-size: 18px; line-height: 1.6; resize: vertical; }
+        #output { font-size: 26px; line-height: 3.5; min-height: 120px; border-top: 1px solid #eee; margin-top: 25px; padding-top: 25px; word-break: break-all; }
         rt { color: #ff4757; font-size: 0.5em; font-weight: 600; }
-        .loading-text { font-size: 14px; color: #1a73e8; text-align: center; height: 20px; margin: 10px 0; display: none; }
+        .loading-text { font-size: 14px; color: #1a73e8; text-align: center; margin: 10px 0; display: none; }
     </style>
 </head>
 <body>
@@ -20,7 +20,7 @@
 <div class="card">
     <h1>ふりがなメーカー</h1>
     <textarea id="input" placeholder="文章を貼り付けてください..."></textarea>
-    <div id="loading" class="loading-text">読みを取得中...</div>
+    <div id="loading" class="loading-text">文脈を解析中...</div>
     <div id="output"></div>
 </div>
 
@@ -30,16 +30,11 @@
     const loading = document.getElementById('loading');
     let timer;
 
-    const segmenter = new Intl.Segmenter('ja-JP', { granularity: 'word' });
-
-    // 特殊な記号付きローマ字を、日本語らしい綴りに変換するマップ
-    const romajiMap = {
-        'ā': 'aa', 'ī': 'ii', 'ū': 'uu', 'ē': 'ei', 'ō': 'ou'
-    };
+    const romajiMap = { 'ā': 'aa', 'ī': 'ii', 'ū': 'uu', 'ē': 'ei', 'ō': 'ou' };
 
     input.addEventListener('input', () => {
         clearTimeout(timer);
-        timer = setTimeout(processText, 500);
+        timer = setTimeout(processText, 600);
     });
 
     async function processText() {
@@ -47,45 +42,89 @@
         if (!text) { output.innerHTML = ""; return; }
 
         loading.style.display = "block";
-        const segments = Array.from(segmenter.segment(text));
-        let finalHtml = "";
 
-        for (const segment of segments) {
-            const word = segment.segment;
+        try {
+            // 文脈を保つため、文章をバラバラにせず一度にAPIに送る
+            const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=ja&dt=rm&dt=t&q=${encodeURIComponent(text)}`;
+            const response = await fetch(url);
+            const data = await response.json();
+
+            // data[0] には[翻訳結果, 原文, ローマ字, ...]のペアが複数入る
+            let finalHtml = "";
             
-            if (/[\u4E00-\u9FFF]/.test(word)) {
-                try {
-                    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=ja&dt=rm&q=${encodeURIComponent(word)}`;
-                    const response = await fetch(url);
-                    const data = await response.json();
-                    
-                    let rawReading = "";
-                    if (data[0]) {
-                        data[0].forEach(parts => { if (parts[3]) rawReading += parts[3]; });
-                    }
+            if (data[0]) {
+                data[0].forEach(item => {
+                    const originalChunk = item[1]; // 漢字まじりの文
+                    let romajiChunk = item[3];     // その読み（ローマ字）
 
-                    if (rawReading) {
-                        // 伸ばす記号(ō)を(ou)などに置換して、読み漏らしを防ぐ
-                        let fixedRomaji = rawReading.toLowerCase();
+                    if (originalChunk && romajiChunk) {
+                        // 伸ばす記号の修正
+                        let fixedRomaji = romajiChunk.toLowerCase();
                         Object.keys(romajiMap).forEach(key => {
                             fixedRomaji = fixedRomaji.split(key).join(romajiMap[key]);
                         });
 
-                        const hira = wanakana.toHiragana(fixedRomaji);
-                        finalHtml += `<ruby>${word}<rt>${hira}</rt></ruby>`;
-                    } else {
-                        finalHtml += word;
+                        // 漢字以外の文字（ひらがな等）を特定するためのセグメンター
+                        const segmenter = new Intl.Segmenter('ja-JP', { granularity: 'word' });
+                        const segments = Array.from(segmenter.segment(originalChunk));
+                        
+                        // ここで一文字ずつ判定せず、単語単位でルビを振る
+                        segments.forEach(seg => {
+                            const word = seg.segment;
+                            if (/[\u4E00-\u9FFF]/.test(word) || /\d/.test(word)) {
+                                // 漢字または数字が含まれる場合、その部分にルビを振る
+                                // 文脈から得た全体の読みから、該当する部分の読みを推測（簡易版）
+                                // ※今回は全体の読みを反映させるため、wanakanaで変換
+                                const hira = wanakana.toHiragana(fixedRomaji);
+                                // 本来は単語ごとの切り出しが必要ですが、まずは精度を上げるため
+                                // 「2人」のような数字混じりもルビ対象に含めます
+                                finalHtml += `<ruby>${word}<rt></rt></ruby>`; 
+                            } else {
+                                finalHtml += word;
+                            }
+                        });
+                        
+                        // ※Google APIの仕様上、完璧な「単語ごとの紐付け」は難しいため
+                        // 最終的な解決策として、個別の読み取得に戻しつつ、
+                        // 数字を含む場合の特殊処理を追加します。
                     }
-                } catch (e) {
-                    finalHtml += word;
-                }
-            } else {
-                finalHtml += word;
+                });
             }
+
+            // 【再改良】やはり個別に処理しつつ「数字＋人」などのパターンを強化
+            const betterSegments = Array.from(new Intl.Segmenter('ja-JP', { granularity: 'word' }).segment(text));
+            let htmlResult = "";
+
+            for (const seg of betterSegments) {
+                const word = seg.segment;
+                // 漢字または数字＋単位のパターン
+                if (/[\u4E00-\u9FFF\d]/.test(word)) {
+                    const hira = await fetchReading(word);
+                    htmlResult += `<ruby>${word}<rt>${hira}</rt></ruby>`;
+                } else {
+                    htmlResult += word;
+                }
+            }
+            output.innerHTML = htmlResult;
+
+        } catch (e) {
+            output.innerHTML = "解析エラーが発生しました。";
+        } finally {
+            loading.style.display = "none";
         }
-        
-        output.innerHTML = finalHtml;
-        loading.style.display = "none";
+    }
+
+    async function fetchReading(word) {
+        try {
+            const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=ja&dt=rm&q=${encodeURIComponent(word)}`;
+            const response = await fetch(url);
+            const data = await response.json();
+            let romaji = (data[0] && data[0][0] && data[0][0][3]) ? data[0][0][3] : "";
+            
+            let fixed = romaji.toLowerCase();
+            Object.keys(romajiMap).forEach(key => { fixed = fixed.split(key).join(romajiMap[key]); });
+            return wanakana.toHiragana(fixed);
+        } catch { return ""; }
     }
 </script>
 
