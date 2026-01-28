@@ -3,23 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ふりがなメーカー | ひらがな版</title>
+    <title>ふりがなメーカー | 漢字のみ抽出版</title>
     <script src="https://unpkg.com/wanakana"></script>
     <style>
-        body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background: #f5f5f5; }
-        .card { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        h1 { font-size: 1.5rem; color: #333; margin-bottom: 20px; text-align: center; }
-        textarea { width: 100%; height: 120px; padding: 12px; border: 2px solid #ddd; border-radius: 10px; box-sizing: border-box; font-size: 16px; margin-bottom: 20px; }
-        #output { font-size: 24px; line-height: 2.5; min-height: 100px; border-top: 1px solid #eee; padding-top: 20px; word-break: break-all; }
-        rt { color: #e74c3c; font-size: 0.55em; font-weight: bold; }
-        .loading-text { font-size: 14px; color: #999; text-align: center; display: none; }
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; max-width: 700px; margin: 40px auto; padding: 20px; background: #f0f2f5; }
+        .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 8px 30px rgba(0,0,0,0.08); }
+        h1 { font-size: 1.8rem; color: #1a73e8; margin-bottom: 25px; text-align: center; font-weight: 800; }
+        textarea { width: 100%; height: 140px; padding: 15px; border: 2px solid #e0e0e0; border-radius: 12px; box-sizing: border-box; font-size: 18px; transition: 0.3s; line-height: 1.6; }
+        textarea:focus { border-color: #1a73e8; outline: none; box-shadow: 0 0 0 4px rgba(26,115,232,0.1); }
+        #output { font-size: 26px; line-height: 3.2; min-height: 120px; border-top: 1px solid #eee; margin-top: 25px; padding-top: 25px; color: #2c3e50; }
+        /* 漢字以外のルビは非表示、または見た目を調整 */
+        ruby { ruby-align: center; }
+        rt { color: #ff4757; font-size: 0.5em; font-weight: 600; letter-spacing: 0.05em; }
+        .loading-text { font-size: 14px; color: #1a73e8; text-align: center; height: 20px; margin: 10px 0; font-weight: bold; display: none; }
     </style>
 </head>
 <body>
 
 <div class="card">
     <h1>ふりがなメーカー</h1>
-    <textarea id="input" placeholder="文章をペーストしてください..."></textarea>
+    <textarea id="input" placeholder="読みを知りたい文章をここに貼ってください"></textarea>
     <div id="loading" class="loading-text">読みを取得中...</div>
     <div id="output"></div>
 </div>
@@ -30,40 +33,53 @@
     const loading = document.getElementById('loading');
     let timer;
 
+    // ブラウザ標準の分割機能を使用
+    const segmenter = new Intl.Segmenter('ja-JP', { granularity: 'word' });
+
     input.addEventListener('input', () => {
         clearTimeout(timer);
-        timer = setTimeout(getFurigana, 500);
+        timer = setTimeout(processText, 600);
     });
 
-    async function getFurigana() {
+    async function processText() {
         const text = input.value.trim();
         if (!text) { output.innerHTML = ""; return; }
 
         loading.style.display = "block";
+        const segments = Array.from(segmenter.segment(text));
+        let finalHtml = "";
 
-        try {
-            const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=ja&dt=rm&q=${encodeURIComponent(text)}`;
-            const response = await fetch(url);
-            const data = await response.json();
+        for (const segment of segments) {
+            const word = segment.segment;
             
-            // 各単語の読み（ローマ字）を抽出して結合
-            let fullRomaji = "";
-            if (data[0]) {
-                data[0].forEach(item => {
-                    if (item[3]) fullRomaji += item[3];
-                });
+            // 漢字が含まれている場合のみ、APIに読みを聞きに行く
+            if (/[\u4E00-\u9FFF]/.test(word)) {
+                try {
+                    const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=ja&dt=rm&q=${encodeURIComponent(word)}`;
+                    const response = await fetch(url);
+                    const data = await response.json();
+                    
+                    let romaji = "";
+                    if (data[0] && data[0][1]) romaji = data[0][1][3];
+                    else if (data[0] && data[0][0]) romaji = data[0][0][3];
+
+                    if (romaji) {
+                        const hira = wanakana.toHiragana(romaji);
+                        finalHtml += `<ruby>${word}<rt>${hira}</rt></ruby>`;
+                    } else {
+                        finalHtml += word;
+                    }
+                } catch (e) {
+                    finalHtml += word;
+                }
+            } else {
+                // 漢字以外（ひらがな、カタカナ、記号）はそのまま表示
+                finalHtml += word;
             }
-            
-            if (fullRomaji) {
-                // wanakanaを使ってローマ字をひらがなに変換
-                const hiragana = wanakana.toHiragana(fullRomaji);
-                output.innerHTML = `<ruby>${text}<rt>${hiragana}</rt></ruby>`;
-            }
-        } catch (e) {
-            output.innerHTML = "エラーが発生しました。再試行してください。";
-        } finally {
-            loading.style.display = "none";
         }
+        
+        output.innerHTML = finalHtml;
+        loading.style.display = "none";
     }
 </script>
 
