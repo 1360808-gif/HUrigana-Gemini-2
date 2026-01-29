@@ -74,12 +74,11 @@
         const progressBar = document.getElementById('progress-bar');
         let timer;
 
-        // 【最強の漢字狙い撃ち辞書】
-        const KanjiForceMap = [
-            { target: '裏切', reading: 'うらぎ' },
-            { target: '自主練', reading: 'じしゅれん' },
-            { target: '的', reading: 'てき' },
-            { target: '絶命', reading: 'ぜつめい' }
+        // 【最優先・強制辞書】APIに聞かずにこの読みを当てる
+        const dictionary = [
+            { kanji: '裏切', kana: 'うらぎ' },
+            { kanji: '自主練', kana: 'じしゅれん' },
+            { kanji: '絶命', kana: 'ぜつめい' }
         ];
 
         const verbFixes = {
@@ -114,31 +113,29 @@
                 
                 if (/[\u4E00-\u9FFF\d]/.test(word)) {
                     let reading = "";
-                    
-                    // --- 1. 漢字狙い撃ちチェック (APIに聞く前に上書き) ---
-                    let forced = false;
-                    for (let entry of KanjiForceMap) {
-                        if (word.includes(entry.target)) {
-                            // APIに聞く代わりに基本の読みをセット
-                            // 送り仮名がある場合はその後にAPI読みを足す処理
-                            let baseReading = entry.reading;
+                    let isDictMatched = false;
+
+                    // 1. 強制辞書チェック (APIに聞く前に実行)
+                    for (const entry of dictionary) {
+                        if (word.includes(entry.kanji)) {
+                            // 漢字部分の読みを確定
                             let rawReading = await getReading(word);
-                            
-                            // 的(まと)や裏切(うらせつ)が含まれていれば置換
+                            // 「うらせつない」等の誤読を力技で書き換え
                             reading = rawReading.replace(/うらせつ|りせつ/g, 'うらぎ')
                                                 .replace(/じしゅねり/g, 'じしゅれん')
-                                                .replace(/まと/g, 'てき')
-                                                .replace(/ぜっ～め/g, 'ぜつめい');
-                            forced = true;
+                                                .replace(/まと/g, 'てき');
+                            isDictMatched = true;
                             break;
                         }
                     }
 
-                    if (!forced) {
+                    if (!isDictMatched) {
                         reading = await getReading(word);
+                        // 的(てき)の個別補正
+                        if (word.includes('的')) reading = reading.replace(/まと/g, 'てき');
                     }
                     
-                    // --- 2. 数字 ＋ 年 の強制修正 ---
+                    // 2. 「数字 ＋ 年」の強制修正
                     if (word === "年" && /[\d０-９]/.test(prevWord)) {
                         reading = "ねん";
                     } else if (/[\d０-９]+年/.test(word)) {
@@ -154,8 +151,13 @@
                     const okuriganaPart = word.substring(i + 1);
                     let kanjiReading = reading.substring(0, j + 1);
 
+                    // 単発漢字の補正
                     if (kanjiPart.length === 1 && verbFixes[kanjiPart]) { kanjiReading = verbFixes[kanjiPart]; }
                     
+                    // 最後に「裏切」だけは絶対に「うらぎ」にする
+                    if (kanjiPart === "裏切") kanjiReading = "うらぎ";
+                    if (kanjiPart === "自主練") kanjiReading = "じしゅれん";
+
                     if (kanjiPart) { htmlResult += `<ruby>${kanjiPart}<rt contenteditable="true">${kanjiReading}</rt></ruby>${okuriganaPart}`; }
                     else { htmlResult += word; }
                 } else {
