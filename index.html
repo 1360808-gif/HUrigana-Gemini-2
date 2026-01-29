@@ -74,10 +74,11 @@
         const progressBar = document.getElementById('progress-bar');
         let timer;
 
+        // 強力な読み修正辞書
         const phraseFixes = {
-            '絶体絶命': 'ぜったいぜつめい', '絶対絶命': 'ぜったいぜつめい', '絶対絶名': 'ぜったいぜつめい',
-            '絶命': 'ぜつめい', '一期一会': 'いちごいちえ', '一生懸命': 'いっしょうけんめい', '束の間': 'つかのま',
-            '裏切': 'うらぎ', '自主練': 'じしゅれん'
+            '絶体絶命': 'ぜったいぜつめい', '絶対絶命': 'ぜったいぜつめい', '絶命': 'ぜつめい',
+            '裏切': 'うらぎ', '自主練': 'じしゅれん', '自主': 'じしゅ',
+            '一期一会': 'いちごいちえ', '一生懸命': 'いっしょうけんめい', '束の間': 'つかのま'
         };
 
         const verbFixes = {
@@ -113,27 +114,28 @@
                 if (/[\u4E00-\u9FFF\d]/.test(word)) {
                     let reading = "";
                     
-                    // 特殊パッチ（裏切、自主練など）を優先
+                    // 1. パッチリストのチェック（裏切、自主練など）
                     let matchedPatch = Object.keys(phraseFixes).find(p => word.startsWith(p));
                     
                     if (matchedPatch) {
-                        // パッチ部分の読み ＋ 残りの部分の読み
                         const baseReading = phraseFixes[matchedPatch];
                         const suffix = word.substring(matchedPatch.length);
                         reading = baseReading + (suffix ? await getReading(suffix) : "");
                     } else {
                         reading = await getReading(word);
                         
-                        // 「的」が含まれる場合の「まと」→「てき」変換を徹底
+                        // 2. 「的」の修正：「まと」が含まれていたら「てき」にする
                         if (word.includes('的')) {
-                            reading = reading.replace('まと', 'てき');
+                            reading = reading.replace(/まと/g, 'てき');
                         }
                         
+                        // 3. 「間」の文脈補正
                         if (word === "間") {
                             if (nextWord === "に" || nextWord === "の" || nextWord === "を") { reading = "あいだ"; }
                         }
                     }
                     
+                    // 4. 送り仮名分離ロジック
                     let i = word.length - 1;
                     let j = reading.length - 1;
                     while (i >= 0 && j >= 0 && word[i] === reading[j] && !/[\u4E00-\u9FFF]/.test(word[i])) { i--; j--; }
@@ -163,8 +165,11 @@
                 const response = await fetch(url);
                 const data = await response.json();
                 let romaji = (data[0] && data[0][0] && data[0][0][3]) ? data[0][0][3] : "";
+                
+                // 不要な記号「〜」などを削除
                 let fixed = romaji.toLowerCase().replace(/[~~\-ー]/g, '');
                 Object.keys(romajiMap).forEach(key => { fixed = fixed.split(key).join(romajiMap[key]); });
+                
                 return wanakana.toHiragana(fixed);
             } catch { return ""; }
         }
