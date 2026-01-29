@@ -124,6 +124,7 @@
                 let prevWord = k > 0 ? segments[k-1].segment : "";
                 
                 if (/[\u4E00-\u9FFF\d]/.test(word)) {
+                    // 1. 漢字とそれ以外（ひらがな・カタカナ）を分離
                     let match = word.match(/^([\u4E00-\u9FFF\d々]+)(.*)$/);
                     let kanjiPart = word;
                     let okuriganaPart = "";
@@ -135,17 +136,27 @@
                     let kanjiReading = "";
                     let isForced = false;
 
-                    if (hardDictionary[word]) {
-                         kanjiReading = hardDictionary[word];
-                         isForced = true;
-                         kanjiPart = word; 
-                         okuriganaPart = "";
-                    } else {
-                        for (let key in hardDictionary) {
-                            if (kanjiPart === key) {
-                                kanjiReading = hardDictionary[key];
-                                isForced = true;
-                                break;
+                    // ★【ここが新機能】大＋カタカナ語 攻略ルール
+                    // 「大」のあとにカタカナ（例：ブーム）が続いていたら、APIに聞かずに「だい」に決定！
+                    if (kanjiPart === '大' && /^[ァ-ヶー]+$/.test(okuriganaPart)) {
+                        kanjiReading = 'だい';
+                        isForced = true;
+                    }
+
+                    // 2. 辞書チェック
+                    if (!isForced) {
+                        if (hardDictionary[word]) {
+                             kanjiReading = hardDictionary[word];
+                             isForced = true;
+                             kanjiPart = word; 
+                             okuriganaPart = "";
+                        } else {
+                            for (let key in hardDictionary) {
+                                if (kanjiPart === key) {
+                                    kanjiReading = hardDictionary[key];
+                                    isForced = true;
+                                    break;
+                                }
                             }
                         }
                     }
@@ -156,6 +167,7 @@
                         } else {
                             let fullReading = await getReading(word);
                             
+                            // 読みから送り仮名分をカット
                             if (fullReading.endsWith(okuriganaPart)) {
                                 kanjiReading = fullReading.substring(0, fullReading.length - okuriganaPart.length);
                             } else {
@@ -165,6 +177,7 @@
                                 }
                             }
 
+                            // 読み間違い是正フィルター
                             for (let correction of correctionMap) {
                                 if (kanjiPart === correction.kanji && kanjiReading === correction.wrong) {
                                     kanjiReading = correction.right;
@@ -174,8 +187,10 @@
                         }
                     }
 
+                    // 1文字動詞の安全策
                     const simpleVerbFixes = {'言':'い','知':'し','出':'で','見':'み','行':'い','読':'よ','書':'か','思':'おも'};
                     if (!isForced && kanjiPart.length === 1 && simpleVerbFixes[kanjiPart] && kanjiReading !== simpleVerbFixes[kanjiPart]) {
+                        // 「大」はカタカナチェックで処理済みなので、ここでは除外される
                         if (okuriganaPart.length > 0) {
                             kanjiReading = simpleVerbFixes[kanjiPart];
                         }
