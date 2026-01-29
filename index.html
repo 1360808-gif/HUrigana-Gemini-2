@@ -1,59 +1,175 @@
-<script>
-    // 【絶対に許さない修正リスト】
-    const extremeFixes = [
-        { wrong: /うらせつ/g, correct: 'うらぎ' },
-        { wrong: /じしゅねり/g, correct: 'じしゅれん' },
-        { wrong: /まと/g, correct: 'てき' },
-        { wrong: /ぜっ～め/g, correct: 'ぜつめい' }
-    ];
-
-    // ... (中略：既存のgetReading関数など) ...
-
-    async function processText() {
-        const text = input.value;
-        if (!text.trim()) { output.innerHTML = ""; return; }
-
-        const segments = Array.from(segmenter.segment(text));
-        let htmlResult = "";
-        
-        // ... (中略：プログレスバー表示など) ...
-
-        for (let k = 0; k < segments.length; k++) {
-            let word = segments[k].segment;
-            
-            if (/[\u4E00-\u9FFF\d]/.test(word)) {
-                let reading = await getReading(word);
-                
-                // --- ここが「力づく」のフィルター ---
-                extremeFixes.forEach(f => {
-                    reading = reading.replace(f.wrong, f.correct);
-                });
-
-                // 裏切の漢字が含まれている場合の個別ガード
-                if (word.includes('裏切')) {
-                    reading = reading.replace(/りせつ|うらせつ/g, 'うらぎ');
-                }
-                if (word.includes('自主練')) {
-                    reading = 'じしゅれん';
-                }
-
-                // 送り仮名分離ロジック
-                let i = word.length - 1;
-                let j = reading.length - 1;
-                while (i >= 0 && j >= 0 && word[i] === reading[j] && !/[\u4E00-\u9FFF]/.test(word[i])) { i--; j--; }
-                
-                let kanjiPart = word.substring(0, i + 1);
-                const okuriganaPart = word.substring(i + 1);
-                let kanjiReading = reading.substring(0, j + 1);
-
-                // 単発漢字の補正
-                if (kanjiPart.length === 1 && verbFixes[kanjiPart]) { kanjiReading = verbFixes[kanjiPart]; }
-                
-                if (kanjiPart) { htmlResult += `<ruby>${kanjiPart}<rt contenteditable="true">${kanjiReading}</rt></ruby>${okuriganaPart}`; }
-                else { htmlResult += word; }
-            } else {
-                htmlResult += word;
-            }
-            progressBar.value = k + 1;
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ふりがなマジック！完全版</title>
+    <script src="https://unpkg.com/wanakana"></script>
+    <style>
+        body {
+            font-family: "UD Digi Kyokasho N-R", "UD デジタル 教科書体 N-R", "UD Digi Kyokasho NK-R", "UD デジタル 教科書体 NK-R", "Hiragino Sans", "Meiryo", sans-serif;
+            background-color: #fcfcfc; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; color: #333;
         }
-        // ... (以下略) ...
+        header { flex: 1; display: flex; padding: 15px 20px; gap: 20px; background-color: #eef9ff; border-bottom: 2px solid #a6dcef; box-sizing: border-box; }
+        .info-pane { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+        h1 { color: #1a73e8; margin: 0 0 8px 0; font-size: 1.5rem; }
+        .notice { background: white; padding: 10px; border-radius: 10px; border: 2px solid #ffcc00; font-size: 0.85rem; line-height: 1.6; }
+        .input-pane { flex: 1; display: flex; }
+        textarea { width: 100%; height: 100%; border: 2px solid #a6dcef; border-radius: 12px; padding: 12px; font-family: inherit; font-size: 16px; resize: none; box-sizing: border-box; outline: none; }
+        
+        main { flex: 2; padding: 20px 40px; overflow-y: auto; background: white; box-sizing: border-box; position: relative; }
+        #output { font-size: 24px; line-height: 2.3; word-break: break-all; transition: opacity 0.3s; }
+        rt { color: #d9534f; font-size: 0.5em; font-weight: bold; cursor: pointer; padding: 0 2px; }
+        rt:hover { background: #ffebeb; border-radius: 3px; }
+
+        #status-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 100;
+        }
+        #status-text { font-size: 2rem; font-weight: bold; color: #1a73e8; margin-bottom: 20px; text-shadow: 1px 1px 0 white; }
+        progress { width: 60%; height: 25px; appearance: none; border: none; }
+        progress::-webkit-progress-bar { background-color: #eee; border-radius: 20px; }
+        progress::-webkit-progress-value { background-color: #ff9f43; border-radius: 20px; transition: width 0.1s; }
+
+        .tools { position: fixed; bottom: 15px; right: 20px; display: flex; gap: 10px; }
+        .btn { background: #ff9f43; color: white; border: none; padding: 10px 20px; border-radius: 50px; font-family: inherit; font-weight: bold; cursor: pointer; box-shadow: 0 3px 0 #e67e22; font-size: 0.9rem; }
+        .btn:active { transform: translateY(2px); box-shadow: none; }
+        .btn.copy { background: #1a73e8; box-shadow: 0 3px 0 #0d47a1; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="info-pane">
+            <h1>✨ ふりがなマジック</h1>
+            <div class="notice">
+                ⚠️ <strong>ちゅうい：</strong>ふりがなが おかしいときは、クリックして なおしてね！<br>
+                💡 「裏切らない」「自主練」「〜的な」の読み間違いを強力にブロック中！
+            </div>
+        </div>
+        <div class="input-pane">
+            <textarea id="input" placeholder="ここに、ふりがなを つけたい 文章を はりつけてね！"></textarea>
+        </div>
+    </header>
+
+    <main>
+        <div id="status-overlay">
+            <div id="status-text">🪄 まほうを かけています...</div>
+            <progress id="progress-bar" value="0" max="100"></progress>
+        </div>
+        <div id="output"></div>
+    </main>
+
+    <div class="tools">
+        <button class="btn copy" onclick="copyOutput()">📋 ふりがなつきで コピー</button>
+        <button class="btn" onclick="clearAll()">🔄 ぜんぶけす</button>
+    </div>
+
+    <script>
+        const input = document.getElementById('input');
+        const output = document.getElementById('output');
+        const overlay = document.getElementById('status-overlay');
+        const progressBar = document.getElementById('progress-bar');
+        let timer;
+
+        // 【絶対に許さない修正リスト：読みの文字列を直接書き換える】
+        const extremeFixes = [
+            { wrong: /うらせつ/g, correct: 'うらぎ' },
+            { wrong: /じしゅねり/g, correct: 'じしゅれん' },
+            { wrong: /まと/g, correct: 'てき' },
+            { wrong: /ぜっ～め/g, correct: 'ぜつめい' }
+        ];
+
+        const verbFixes = {
+            '言': 'い', '知': 'し', '出': 'で', '分': 'わ', '見': 'み', 
+            '生': 'い', '行': 'い', '思': 'おも', '書': 'か', '読': 'よ',
+            '外': 'はず', '信': 'しん', '話': 'はな', '聞': 'き', '待': 'ま'
+        };
+
+        const romajiMap = { 'ā': 'aa', 'ī': 'ii', 'ū': 'uu', 'ē': 'ei', 'ō': 'ou' };
+        const segmenter = new Intl.Segmenter('ja-JP', { granularity: 'word' });
+
+        input.addEventListener('input', () => {
+            clearTimeout(timer);
+            timer = setTimeout(processText, 800);
+        });
+
+        async function processText() {
+            const text = input.value;
+            if (!text.trim()) { output.innerHTML = ""; return; }
+
+            const segments = Array.from(segmenter.segment(text));
+            let htmlResult = "";
+            
+            overlay.style.display = "flex";
+            output.style.opacity = "0.2";
+            progressBar.value = 0;
+            progressBar.max = segments.length;
+
+            for (let k = 0; k < segments.length; k++) {
+                let word = segments[k].segment;
+                
+                if (/[\u4E00-\u9FFF\d]/.test(word)) {
+                    let reading = await getReading(word);
+                    
+                    // --- 強制置換フィルター発動 ---
+                    extremeFixes.forEach(f => {
+                        reading = reading.replace(f.wrong, f.correct);
+                    });
+
+                    // 個別漢字補正（保険用）
+                    if (word.includes('裏切')) reading = reading.replace(/うらせつ/g, 'うらぎ');
+                    if (word.includes('自主練')) reading = 'じしゅれん';
+
+                    // 送り仮名分離ロジック
+                    let i = word.length - 1;
+                    let j = reading.length - 1;
+                    while (i >= 0 && j >= 0 && word[i] === reading[j] && !/[\u4E00-\u9FFF]/.test(word[i])) { i--; j--; }
+                    
+                    let kanjiPart = word.substring(0, i + 1);
+                    const okuriganaPart = word.substring(i + 1);
+                    let kanjiReading = reading.substring(0, j + 1);
+
+                    if (kanjiPart.length === 1 && verbFixes[kanjiPart]) { kanjiReading = verbFixes[kanjiPart]; }
+                    
+                    if (kanjiPart) { htmlResult += `<ruby>${kanjiPart}<rt contenteditable="true">${kanjiReading}</rt></ruby>${okuriganaPart}`; }
+                    else { htmlResult += word; }
+                } else {
+                    htmlResult += word;
+                }
+                progressBar.value = k + 1;
+            }
+
+            output.innerHTML = htmlResult;
+            output.style.opacity = "1";
+            overlay.style.display = "none";
+        }
+
+        async function getReading(word) {
+            try {
+                const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=ja&dt=rm&q=${encodeURIComponent(word)}`;
+                const response = await fetch(url);
+                const data = await response.json();
+                let romaji = (data[0] && data[0][0] && data[0][0][3]) ? data[0][0][3] : "";
+                let fixed = romaji.toLowerCase().replace(/[~~\-ー]/g, '');
+                Object.keys(romajiMap).forEach(key => { fixed = fixed.split(key).join(romajiMap[key]); });
+                return wanakana.toHiragana(fixed);
+            } catch { return ""; }
+        }
+
+        function copyOutput() {
+            const range = document.createRange();
+            range.selectNodeContents(output);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            document.execCommand('copy');
+            alert("コピーしたよ！");
+        }
+
+        function clearAll() { input.value = ""; output.innerHTML = ""; overlay.style.display = "none"; input.focus(); }
+    </script>
+</body>
+</html>
