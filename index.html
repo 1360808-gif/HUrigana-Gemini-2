@@ -74,12 +74,12 @@
         const progressBar = document.getElementById('progress-bar');
         let timer;
 
-        // 【絶対に許さない修正リスト】
-        const extremeFixes = [
-            { wrong: /うらせつ/g, correct: 'うらぎ' },
-            { wrong: /じしゅねり/g, correct: 'じしゅれん' },
-            { wrong: /まと/g, correct: 'てき' },
-            { wrong: /ぜっ～め/g, correct: 'ぜつめい' }
+        // 【最強の漢字狙い撃ち辞書】
+        const KanjiForceMap = [
+            { target: '裏切', reading: 'うらぎ' },
+            { target: '自主練', reading: 'じしゅれん' },
+            { target: '的', reading: 'てき' },
+            { target: '絶命', reading: 'ぜつめい' }
         ];
 
         const verbFixes = {
@@ -113,23 +113,37 @@
                 let prevWord = k > 0 ? segments[k-1].segment : "";
                 
                 if (/[\u4E00-\u9FFF\d]/.test(word)) {
-                    let reading = await getReading(word);
+                    let reading = "";
                     
-                    // 「数字 ＋ 年」の強制修正
+                    // --- 1. 漢字狙い撃ちチェック (APIに聞く前に上書き) ---
+                    let forced = false;
+                    for (let entry of KanjiForceMap) {
+                        if (word.includes(entry.target)) {
+                            // APIに聞く代わりに基本の読みをセット
+                            // 送り仮名がある場合はその後にAPI読みを足す処理
+                            let baseReading = entry.reading;
+                            let rawReading = await getReading(word);
+                            
+                            // 的(まと)や裏切(うらせつ)が含まれていれば置換
+                            reading = rawReading.replace(/うらせつ|りせつ/g, 'うらぎ')
+                                                .replace(/じしゅねり/g, 'じしゅれん')
+                                                .replace(/まと/g, 'てき')
+                                                .replace(/ぜっ～め/g, 'ぜつめい');
+                            forced = true;
+                            break;
+                        }
+                    }
+
+                    if (!forced) {
+                        reading = await getReading(word);
+                    }
+                    
+                    // --- 2. 数字 ＋ 年 の強制修正 ---
                     if (word === "年" && /[\d０-９]/.test(prevWord)) {
                         reading = "ねん";
                     } else if (/[\d０-９]+年/.test(word)) {
                         reading = reading.replace(/とし$/, 'ねん');
                     }
-
-                    // 強制置換フィルター
-                    extremeFixes.forEach(f => {
-                        reading = reading.replace(f.wrong, f.correct);
-                    });
-
-                    // 個別ガード
-                    if (word.includes('裏切')) reading = reading.replace(/うらせつ/g, 'うらぎ');
-                    if (word.includes('自主練')) reading = 'じしゅれん';
 
                     // 送り仮名分離ロジック
                     let i = word.length - 1;
