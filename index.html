@@ -45,8 +45,8 @@
         <div class="info-pane">
             <h1>✨ ふりがなマジック</h1>
             <div class="notice">
-                ⚠️ <strong>ちゅうい：</strong>ふりがなが おかしいときは、クリックして なおしてね！<br>
-                💡 「裏切らない」「自主練」「〜的な」の読み間違いを強力にブロック中！
+                ⚠️ <strong>ちゅうい：</strong>つけられた ふりがなは、まちがっている ときが あります。<br>
+                💡 <strong>ヒント：</strong>まちがっている ふりがなは、クリックすると じぶんで なおせるよ！
             </div>
         </div>
         <div class="input-pane">
@@ -74,7 +74,7 @@
         const progressBar = document.getElementById('progress-bar');
         let timer;
 
-        // 【絶対に許さない修正リスト：読みの文字列を直接書き換える】
+        // 【絶対に許さない修正リスト】
         const extremeFixes = [
             { wrong: /うらせつ/g, correct: 'うらぎ' },
             { wrong: /じしゅねり/g, correct: 'じしゅれん' },
@@ -110,16 +110,24 @@
 
             for (let k = 0; k < segments.length; k++) {
                 let word = segments[k].segment;
+                let prevWord = k > 0 ? segments[k-1].segment : "";
                 
                 if (/[\u4E00-\u9FFF\d]/.test(word)) {
                     let reading = await getReading(word);
                     
-                    // --- 強制置換フィルター発動 ---
+                    // 「数字 ＋ 年」の強制修正
+                    if (word === "年" && /[\d０-９]/.test(prevWord)) {
+                        reading = "ねん";
+                    } else if (/[\d０-９]+年/.test(word)) {
+                        reading = reading.replace(/とし$/, 'ねん');
+                    }
+
+                    // 強制置換フィルター
                     extremeFixes.forEach(f => {
                         reading = reading.replace(f.wrong, f.correct);
                     });
 
-                    // 個別漢字補正（保険用）
+                    // 個別ガード
                     if (word.includes('裏切')) reading = reading.replace(/うらせつ/g, 'うらぎ');
                     if (word.includes('自主練')) reading = 'じしゅれん';
 
