@@ -74,17 +74,17 @@
         const progressBar = document.getElementById('progress-bar');
         let timer;
 
-        // 【最優先・強制辞書】APIに聞かずにこの読みを当てる
-        const dictionary = [
-            { kanji: '裏切', kana: 'うらぎ' },
-            { kanji: '自主練', kana: 'じしゅれん' },
-            { kanji: '絶命', kana: 'ぜつめい' }
-        ];
+        // 【最優先・APIを通さない強制辞書】
+        const hardDictionary = {
+            '裏切': 'うらぎ',
+            '自主練': 'じしゅれん',
+            '的': 'てき',
+            '絶命': 'ぜつめい'
+        };
 
         const verbFixes = {
             '言': 'い', '知': 'し', '出': 'で', '分': 'わ', '見': 'み', 
-            '生': 'い', '行': 'い', '思': 'おも', '書': 'か', '読': 'よ',
-            '外': 'はず', '信': 'しん', '話': 'はな', '聞': 'き', '待': 'ま'
+            '生': 'い', '行': 'i', '思': 'おも', '書': 'か', '読': 'よ'
         };
 
         const romajiMap = { 'ā': 'aa', 'ī': 'ii', 'ū': 'uu', 'ē': 'ei', 'ō': 'ou' };
@@ -113,33 +113,22 @@
                 
                 if (/[\u4E00-\u9FFF\d]/.test(word)) {
                     let reading = "";
-                    let isDictMatched = false;
 
-                    // 1. 強制辞書チェック (APIに聞く前に実行)
-                    for (const entry of dictionary) {
-                        if (word.includes(entry.kanji)) {
-                            // 漢字部分の読みを確定
-                            let rawReading = await getReading(word);
-                            // 「うらせつない」等の誤読を力技で書き換え
-                            reading = rawReading.replace(/うらせつ|りせつ/g, 'うらぎ')
-                                                .replace(/じしゅねり/g, 'じしゅれん')
-                                                .replace(/まと/g, 'てき');
-                            isDictMatched = true;
-                            break;
-                        }
-                    }
-
-                    if (!isDictMatched) {
-                        reading = await getReading(word);
-                        // 的(てき)の個別補正
-                        if (word.includes('的')) reading = reading.replace(/まと/g, 'てき');
-                    }
+                    // 1. 強制辞書に完全一致、または含まれているかチェック
+                    let matchedKey = Object.keys(hardDictionary).find(key => word.includes(key));
                     
-                    // 2. 「数字 ＋ 年」の強制修正
-                    if (word === "年" && /[\d０-９]/.test(prevWord)) {
+                    if (matchedKey) {
+                        // 辞書にある言葉が含まれていたら、APIを使わずに置換
+                        let rawReading = await getReading(word);
+                        reading = rawReading.replace(/うらせつ|りせつ/g, 'うらぎ')
+                                            .replace(/じしゅねり/g, 'じしゅれん')
+                                            .replace(/まと/g, 'てき');
+                    } else if (word === "年" && /[\d０-９]/.test(prevWord)) {
                         reading = "ねん";
                     } else if (/[\d０-９]+年/.test(word)) {
-                        reading = reading.replace(/とし$/, 'ねん');
+                        reading = "ねん"; // 数字付きの年は「ねん」一択
+                    } else {
+                        reading = await getReading(word);
                     }
 
                     // 送り仮名分離ロジック
@@ -151,12 +140,13 @@
                     const okuriganaPart = word.substring(i + 1);
                     let kanjiReading = reading.substring(0, j + 1);
 
-                    // 単発漢字の補正
+                    // 辞書による最終上書き（ここが一番強力）
+                    for (let key in hardDictionary) {
+                        if (kanjiPart.includes(key)) {
+                            kanjiReading = kanjiReading.replace(new RegExp('.*'), hardDictionary[key]);
+                        }
+                    }
                     if (kanjiPart.length === 1 && verbFixes[kanjiPart]) { kanjiReading = verbFixes[kanjiPart]; }
-                    
-                    // 最後に「裏切」だけは絶対に「うらぎ」にする
-                    if (kanjiPart === "裏切") kanjiReading = "うらぎ";
-                    if (kanjiPart === "自主練") kanjiReading = "じしゅれん";
 
                     if (kanjiPart) { htmlResult += `<ruby>${kanjiPart}<rt contenteditable="true">${kanjiReading}</rt></ruby>${okuriganaPart}`; }
                     else { htmlResult += word; }
