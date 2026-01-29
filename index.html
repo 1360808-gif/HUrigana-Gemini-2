@@ -46,7 +46,8 @@
             <h1>✨ ふりがなマジック</h1>
             <div class="notice">
                 ⚠️ <strong>ちゅうい：</strong>つけられた ふりがなは、まちがっている ときが あります。<br>
-                💡 <strong>ヒント：</strong>まちがっている ふりがなは、クリックすると じぶんで なおせるよ！
+                💡 <strong>ヒント：</strong>まちがっている ふりがなは、クリックすると じぶんで なおせるよ！<br>
+                ※よかったら、おかしなふりがなにきづいたら、メモして先生におしえて。なおせるならなおすから
             </div>
         </div>
         <div class="input-pane">
@@ -74,7 +75,6 @@
         const progressBar = document.getElementById('progress-bar');
         let timer;
 
-        // 【A. 強制辞書】
         const hardDictionary = {
             '自主練': 'じしゅれん',
             '絶命': 'ぜつめい',
@@ -86,19 +86,17 @@
             '明日': 'あした'
         };
 
-        // 【B. 読み間違い是正フィルター】
-        // ここに追加することで、APIの誤読（音読み化）を強制的に訓読みに直します
         const correctionMap = [
             { kanji: '裏切', wrong: 'うらせつ', right: 'うらぎ' },
             { kanji: '裏切', wrong: 'りせつ', right: 'うらぎ' },
-            { kanji: '決', wrong: 'けつ', right: 'き' },       // 決まらない
-            { kanji: '分', wrong: 'ぶん', right: 'わ' },       // 分からない
-            { kanji: '切', wrong: 'せつ', right: 'き' },       // 切らない
-            { kanji: '断', wrong: 'だん', right: 'ことわ' },   // 断らない
-            { kanji: '通', wrong: 'つう', right: 'とお' },     // 通らない
-            { kanji: '的', wrong: 'まと', right: 'てき' },     // 〜的な
-            { kanji: '打', wrong: 'だ', right: 'う' },         // 打たれない（追加）
-            { kanji: '投', wrong: 'とう', right: 'な' }        // 投げられない（追加）
+            { kanji: '決', wrong: 'けつ', right: 'き' },
+            { kanji: '分', wrong: 'ぶん', right: 'わ' },
+            { kanji: '切', wrong: 'せつ', right: 'き' },
+            { kanji: '断', wrong: 'だん', right: 'ことわ' },
+            { kanji: '通', wrong: 'つう', right: 'とお' },
+            { kanji: '的', wrong: 'まと', right: 'てき' },
+            { kanji: '打', wrong: 'だ', right: 'う' },
+            { kanji: '投', wrong: 'とう', right: 'な' }
         ];
 
         const romajiMap = { 'ā': 'aa', 'ī': 'ii', 'ū': 'uu', 'ē': 'ei', 'ō': 'ou' };
@@ -126,27 +124,23 @@
                 let prevWord = k > 0 ? segments[k-1].segment : "";
                 
                 if (/[\u4E00-\u9FFF\d]/.test(word)) {
-                    
                     let match = word.match(/^([\u4E00-\u9FFF\d々]+)(.*)$/);
                     let kanjiPart = word;
                     let okuriganaPart = "";
                     if (match) {
-                        kanjiPart = match[1]; // 漢字の茎（ステム）部分
+                        kanjiPart = match[1];
                         okuriganaPart = match[2];
                     }
 
                     let kanjiReading = "";
                     let isForced = false;
 
-                    // 1. 辞書チェック（完全一致）
                     if (hardDictionary[word]) {
                          kanjiReading = hardDictionary[word];
                          isForced = true;
-                         // 辞書ヒット時は送り仮名分離ロジックをスキップして単語全体として処理
                          kanjiPart = word; 
                          okuriganaPart = "";
                     } else {
-                        // 辞書のキーが漢字部分と一致する場合（自主練など）
                         for (let key in hardDictionary) {
                             if (kanjiPart === key) {
                                 kanjiReading = hardDictionary[key];
@@ -162,7 +156,6 @@
                         } else {
                             let fullReading = await getReading(word);
                             
-                            // 送り仮名を削る処理
                             if (fullReading.endsWith(okuriganaPart)) {
                                 kanjiReading = fullReading.substring(0, fullReading.length - okuriganaPart.length);
                             } else {
@@ -172,8 +165,6 @@
                                 }
                             }
 
-                            // 2. 【読み間違い是正フィルター】
-                            // 漢字部分が完全に一致する場合のみ適用（「打点」などを巻き込まないため）
                             for (let correction of correctionMap) {
                                 if (kanjiPart === correction.kanji && kanjiReading === correction.wrong) {
                                     kanjiReading = correction.right;
@@ -183,7 +174,6 @@
                         }
                     }
 
-                    // 1文字の動詞の安全策
                     const simpleVerbFixes = {'言':'い','知':'し','出':'で','見':'み','行':'い','読':'よ','書':'か','思':'おも'};
                     if (!isForced && kanjiPart.length === 1 && simpleVerbFixes[kanjiPart] && kanjiReading !== simpleVerbFixes[kanjiPart]) {
                         if (okuriganaPart.length > 0) {
