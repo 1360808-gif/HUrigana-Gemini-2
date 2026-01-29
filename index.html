@@ -45,12 +45,12 @@
         <div class="info-pane">
             <h1>✨ ふりがなマジック</h1>
             <div class="notice">
-                ⚠️ <strong>ちゅうい：</strong>つけられた ふりがなは、まちがっている ときが あります。おかしいなと おもったら、せんせいや ともだちに きいて みてね。<br>
-                💡 <strong>ヒント：</strong>まちがっている ふりがなは、クリックすると じぶんで なおすことも できるよ！
+                ⚠️ <strong>ちゅうい：</strong>つけられた ふりがなは、まちがっている ときが あります。<br>
+                💡 <strong>ヒント：</strong>まちがっている ふりがなは、クリックすると じぶんで なおせるよ！
             </div>
         </div>
         <div class="input-pane">
-            <textarea id="input" placeholder="ここに、ふりがなを つけたい 文章を はりつけてね！"></textarea>
+            <textarea id="input" placeholder="ここに、文章を はりつけてね！"></textarea>
         </div>
     </header>
 
@@ -63,7 +63,7 @@
     </main>
 
     <div class="tools">
-        <button class="btn copy" onclick="copyOutput()">📋 ふりがなつきで コピー</button>
+        <button class="btn copy" onclick="copyOutput()">📋 コピー</button>
         <button class="btn" onclick="clearAll()">🔄 ぜんぶけす</button>
     </div>
 
@@ -74,12 +74,13 @@
         const progressBar = document.getElementById('progress-bar');
         let timer;
 
-        // 強力な読み修正辞書
-        const phraseFixes = {
-            '絶体絶命': 'ぜったいぜつめい', '絶対絶命': 'ぜったいぜつめい', '絶命': 'ぜつめい',
-            '裏切': 'うらぎ', '自主練': 'じしゅれん', '自主': 'じしゅ',
-            '一期一会': 'いちごいちえ', '一生懸命': 'いっしょうけんめい', '束の間': 'つかのま'
-        };
+        // 【最強の修正辞書】
+        const hardFixes = [
+            { kanji: '裏切', kana: 'うらぎ' },
+            { kanji: '自主練', kana: 'じしゅれん' },
+            { kanji: '絶命', kana: 'ぜつめい' },
+            { kanji: '的', kana: 'てき' } // 「的」を「まと」と読ませない
+        ];
 
         const verbFixes = {
             '言': 'い', '知': 'し', '出': 'で', '分': 'わ', '見': 'み', 
@@ -108,34 +109,27 @@
             progressBar.max = segments.length;
 
             for (let k = 0; k < segments.length; k++) {
-                const word = segments[k].segment;
-                const nextWord = segments[k+1] ? segments[k+1].segment : "";
-
+                let word = segments[k].segment;
+                
                 if (/[\u4E00-\u9FFF\d]/.test(word)) {
-                    let reading = "";
+                    let reading = await getReading(word);
                     
-                    // 1. パッチリストのチェック（裏切、自主練など）
-                    let matchedPatch = Object.keys(phraseFixes).find(p => word.startsWith(p));
-                    
-                    if (matchedPatch) {
-                        const baseReading = phraseFixes[matchedPatch];
-                        const suffix = word.substring(matchedPatch.length);
-                        reading = baseReading + (suffix ? await getReading(suffix) : "");
-                    } else {
-                        reading = await getReading(word);
-                        
-                        // 2. 「的」の修正：「まと」が含まれていたら「てき」にする
-                        if (word.includes('的')) {
-                            reading = reading.replace(/まと/g, 'てき');
+                    // --- 強制上書きガード (ここが強化ポイント) ---
+                    hardFixes.forEach(fix => {
+                        if (word.includes(fix.kanji)) {
+                            // 漢字が含まれていたら、その部分の読みを強制置換
+                            // APIの「うらせつ」や「じしゅねり」を力づくで上書き
+                            if (fix.kanji === '的') {
+                                reading = reading.replace(/まと/g, 'てき');
+                            } else if (fix.kanji === '裏切') {
+                                reading = reading.replace(/うらせつ|りせつ/g, 'うらぎ');
+                            } else if (fix.kanji === '自主練') {
+                                reading = 'じしゅれん'; 
+                            }
                         }
-                        
-                        // 3. 「間」の文脈補正
-                        if (word === "間") {
-                            if (nextWord === "に" || nextWord === "の" || nextWord === "を") { reading = "あいだ"; }
-                        }
-                    }
-                    
-                    // 4. 送り仮名分離ロジック
+                    });
+
+                    // 送り仮名分離
                     let i = word.length - 1;
                     let j = reading.length - 1;
                     while (i >= 0 && j >= 0 && word[i] === reading[j] && !/[\u4E00-\u9FFF]/.test(word[i])) { i--; j--; }
@@ -144,6 +138,7 @@
                     const okuriganaPart = word.substring(i + 1);
                     let kanjiReading = reading.substring(0, j + 1);
 
+                    // 1文字動詞の補正
                     if (kanjiPart.length === 1 && verbFixes[kanjiPart]) { kanjiReading = verbFixes[kanjiPart]; }
                     
                     if (kanjiPart) { htmlResult += `<ruby>${kanjiPart}<rt contenteditable="true">${kanjiReading}</rt></ruby>${okuriganaPart}`; }
@@ -165,11 +160,8 @@
                 const response = await fetch(url);
                 const data = await response.json();
                 let romaji = (data[0] && data[0][0] && data[0][0][3]) ? data[0][0][3] : "";
-                
-                // 不要な記号「〜」などを削除
                 let fixed = romaji.toLowerCase().replace(/[~~\-ー]/g, '');
                 Object.keys(romajiMap).forEach(key => { fixed = fixed.split(key).join(romajiMap[key]); });
-                
                 return wanakana.toHiragana(fixed);
             } catch { return ""; }
         }
