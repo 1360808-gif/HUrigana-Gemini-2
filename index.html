@@ -74,17 +74,22 @@
         const progressBar = document.getElementById('progress-bar');
         let timer;
 
-        // 【最優先・APIを通さない強制辞書】
+        // 【最強の強制辞書】
+        // ここにある単語の一部が含まれていたら、APIを使わずに強制的に読みを当てます
         const hardDictionary = {
-            '裏切': 'うらぎ',
+            '裏切': 'うらぎ', // 「裏切らない」「裏切る」すべてに対応
             '自主練': 'じしゅれん',
-            '的': 'てき',
-            '絶命': 'ぜつめい'
+            '絶命': 'ぜつめい',
+            '戦力外': 'せんりょくがい',
+            '親し': 'した', // 「親しい」
+            '仲良く': 'なかよ',
+            '何とか': 'なん'
         };
 
         const verbFixes = {
             '言': 'い', '知': 'し', '出': 'で', '分': 'わ', '見': 'み', 
-            '生': 'い', '行': 'i', '思': 'おも', '書': 'か', '読': 'よ'
+            '生': 'い', '行': 'い', '思': 'おも', '書': 'か', '読': 'よ',
+            '外': 'はず', '信': 'しん', '話': 'はな', '聞': 'き', '待': 'ま'
         };
 
         const romajiMap = { 'ā': 'aa', 'ī': 'ii', 'ū': 'uu', 'ē': 'ei', 'ō': 'ou' };
@@ -111,45 +116,79 @@
                 let word = segments[k].segment;
                 let prevWord = k > 0 ? segments[k-1].segment : "";
                 
+                // 漢字または数字が含まれる場合のみ処理
                 if (/[\u4E00-\u9FFF\d]/.test(word)) {
-                    let reading = "";
-
-                    // 1. 強制辞書に完全一致、または含まれているかチェック
-                    let matchedKey = Object.keys(hardDictionary).find(key => word.includes(key));
                     
-                    if (matchedKey) {
-                        // 辞書にある言葉が含まれていたら、APIを使わずに置換
-                        let rawReading = await getReading(word);
-                        reading = rawReading.replace(/うらせつ|りせつ/g, 'うらぎ')
-                                            .replace(/じしゅねり/g, 'じしゅれん')
-                                            .replace(/まと/g, 'てき');
-                    } else if (word === "年" && /[\d０-９]/.test(prevWord)) {
-                        reading = "ねん";
-                    } else if (/[\d０-９]+年/.test(word)) {
-                        reading = "ねん"; // 数字付きの年は「ねん」一択
-                    } else {
-                        reading = await getReading(word);
+                    // --- 1. 漢字部分と送り仮名部分を「見た目」で強制分離 ---
+                    // 正規表現で、[漢字の塊] + [ひらがなの塊] に強制的に分けます
+                    // これにより「らない」などがルビの中に混ざるのを防ぎます
+                    let match = word.match(/^([\u4E00-\u9FFF\d々]+)(.*)$/);
+                    let kanjiPart = word;
+                    let okuriganaPart = "";
+                    
+                    if (match) {
+                        kanjiPart = match[1]; // 漢字部分（例：裏切）
+                        okuriganaPart = match[2]; // 送り仮名部分（例：らない）
                     }
 
-                    // 送り仮名分離ロジック
-                    let i = word.length - 1;
-                    let j = reading.length - 1;
-                    while (i >= 0 && j >= 0 && word[i] === reading[j] && !/[\u4E00-\u9FFF]/.test(word[i])) { i--; j--; }
-                    
-                    let kanjiPart = word.substring(0, i + 1);
-                    const okuriganaPart = word.substring(i + 1);
-                    let kanjiReading = reading.substring(0, j + 1);
+                    // --- 2. 読みの取得 ---
+                    let reading = "";
+                    let isForced = false;
 
-                    // 辞書による最終上書き（ここが一番強力）
+                    // A. 辞書チェック（漢字部分に含まれていれば即採用）
                     for (let key in hardDictionary) {
                         if (kanjiPart.includes(key)) {
-                            kanjiReading = kanjiReading.replace(new RegExp('.*'), hardDictionary[key]);
+                            // 辞書の読み ＋ 残りの部分（推測）
+                            // ※簡易的な置換ですが、裏切(うらぎ)のようなケースには最強です
+                            reading = kanjiPart.replace(key, hardDictionary[key]);
+                            isForced = true;
+                            break;
                         }
                     }
-                    if (kanjiPart.length === 1 && verbFixes[kanjiPart]) { kanjiReading = verbFixes[kanjiPart]; }
 
-                    if (kanjiPart) { htmlResult += `<ruby>${kanjiPart}<rt contenteditable="true">${kanjiReading}</rt></ruby>${okuriganaPart}`; }
-                    else { htmlResult += word; }
+                    // B. 辞書になければAPIへ（数字+年は例外）
+                    if (!isForced) {
+                        if (word === "年" && /[\d０-９]/.test(prevWord)) {
+                            reading = "ねん";
+                        } else if (/^\d+年$/.test(word)) {
+                            reading = "ねん"; 
+                        } else {
+                            // APIから全体の読みを取得（例：うらせつない）
+                            let fullReading = await getReading(word);
+                            
+                            // C. 読みから送り仮名を削ぎ落とす処理（新ロジック）
+                            // APIの読み（うらせつない）の末尾が、送り仮名（らない）と一致するか？
+                            if (fullReading.endsWith(okuriganaPart)) {
+                                // 一致するなら削る（うらせつない - らない = うらせつ）
+                                reading = fullReading.substring(0, fullReading.length - okuriganaPart.length);
+                            } else {
+                                // 一致しない場合（APIが活用形を間違えた場合など）
+                                // 無理やり削れるだけ削る、あるいはそのまま当てる
+                                // ここでは「送り仮名の最後の1文字」が一致していれば、それを基準に削る
+                                let lastChar = okuriganaPart.slice(-1);
+                                if (fullReading.endsWith(lastChar) && okuriganaPart.length > 0) {
+                                    // 簡易的な安全策：送り仮名の文字数分だけ後ろからカット
+                                    reading = fullReading.substring(0, fullReading.length - okuriganaPart.length);
+                                } else {
+                                    reading = fullReading; // どうしようもない場合はそのまま
+                                }
+                            }
+                        }
+                    }
+
+                    // 個別漢字の1文字補正（念のため）
+                    if (kanjiPart.length === 1 && verbFixes[kanjiPart] && !isForced) {
+                        reading = verbFixes[kanjiPart];
+                    }
+                    
+                    // --- 3. 出力 ---
+                    // 送り仮名（okuriganaPart）は絶対に ruby タグの外に出す
+                    if (kanjiPart) {
+                        htmlResult += `<ruby>${kanjiPart}<rt contenteditable="true">${reading}</rt></ruby>${okuriganaPart}`;
+                    } else {
+                        htmlResult += word;
+                    }
+
                 } else {
                     htmlResult += word;
                 }
@@ -167,7 +206,7 @@
                 const response = await fetch(url);
                 const data = await response.json();
                 let romaji = (data[0] && data[0][0] && data[0][0][3]) ? data[0][0][3] : "";
-                let fixed = romaji.toLowerCase().replace(/[~~\-ー]/g, '');
+                let fixed = romaji.toLowerCase().replace(/[~~\-ー\s]/g, ''); // スペースや記号も削除
                 Object.keys(romajiMap).forEach(key => { fixed = fixed.split(key).join(romajiMap[key]); });
                 return wanakana.toHiragana(fixed);
             } catch { return ""; }
