@@ -16,15 +16,28 @@
         .notice { background: white; padding: 10px; border-radius: 10px; border: 2px solid #ffcc00; font-size: 0.85rem; line-height: 1.6; }
         .input-pane { flex: 1; display: flex; }
         textarea { width: 100%; height: 100%; border: 2px solid #a6dcef; border-radius: 12px; padding: 12px; font-family: inherit; font-size: 16px; resize: none; box-sizing: border-box; outline: none; }
+        
         main { flex: 2; padding: 20px 40px; overflow-y: auto; background: white; box-sizing: border-box; position: relative; }
-        #output { font-size: 24px; line-height: 2.3; word-break: break-all; }
+        #output { font-size: 24px; line-height: 2.3; word-break: break-all; transition: opacity 0.3s; }
         rt { color: #d9534f; font-size: 0.5em; font-weight: bold; cursor: pointer; padding: 0 2px; }
         rt:hover { background: #ffebeb; border-radius: 3px; }
+
+        /* まほう中（ローディング）のスタイル */
+        #status-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 100;
+        }
+        #status-text { font-size: 2rem; font-weight: bold; color: #1a73e8; margin-bottom: 20px; text-shadow: 2px 2px 0 white; }
+        progress { width: 60%; height: 25px; appearance: none; }
+        progress::-webkit-progress-bar { background-color: #eee; border-radius: 20px; box-shadow: inset 0 2px 5px rgba(0,0,0,0.1); }
+        progress::-webkit-progress-value { background-color: #ff9f43; border-radius: 20px; transition: width 0.2s; }
+
         .tools { position: fixed; bottom: 15px; right: 20px; display: flex; gap: 10px; }
         .btn { background: #ff9f43; color: white; border: none; padding: 10px 20px; border-radius: 50px; font-family: inherit; font-weight: bold; cursor: pointer; box-shadow: 0 3px 0 #e67e22; font-size: 0.9rem; }
         .btn:active { transform: translateY(2px); box-shadow: none; }
         .btn.copy { background: #1a73e8; box-shadow: 0 3px 0 #0d47a1; }
-        #status { position: absolute; top: 5px; right: 20px; font-size: 12px; color: #1a73e8; }
     </style>
 </head>
 <body>
@@ -43,7 +56,10 @@
     </header>
 
     <main>
-        <div id="status"></div>
+        <div id="status-overlay">
+            <div id="status-text">🪄 まほうを かけています...</div>
+            <progress id="progress-bar" value="0" max="100"></progress>
+        </div>
         <div id="output"></div>
     </main>
 
@@ -55,18 +71,13 @@
     <script>
         const input = document.getElementById('input');
         const output = document.getElementById('output');
-        const status = document.getElementById('status');
+        const overlay = document.getElementById('status-overlay');
+        const progressBar = document.getElementById('progress-bar');
         let timer;
 
-        // 特殊なパッチ：読み間違いが多い熟語
         const phraseFixes = {
-            '絶体絶命': 'ぜったいぜつめい',
-            '絶対絶命': 'ぜったいぜつめい',
-            '絶対絶名': 'ぜったいぜつめい',
-            '絶命': 'ぜつめい',
-            '一期一会': 'いちごいちえ',
-            '一生懸命': 'いっしょうけんめい',
-            '束の間': 'つかのま'
+            '絶体絶命': 'ぜったいぜつめい', '絶対絶命': 'ぜったいぜつめい', '絶対絶名': 'ぜったいぜつめい',
+            '絶命': 'ぜつめい', '一期一会': 'いちごいちえ', '一生懸命': 'いっしょうけんめい', '束の間': 'つかのま'
         };
 
         const verbFixes = {
@@ -80,16 +91,21 @@
 
         input.addEventListener('input', () => {
             clearTimeout(timer);
-            status.innerText = "まほうを かけています...";
-            timer = setTimeout(processText, 600);
+            timer = setTimeout(processText, 800);
         });
 
         async function processText() {
             const text = input.value;
-            if (!text.trim()) { output.innerHTML = ""; status.innerText = ""; return; }
+            if (!text.trim()) { output.innerHTML = ""; return; }
 
             const segments = Array.from(segmenter.segment(text));
             let htmlResult = "";
+            
+            // プログレスバーの準備
+            overlay.style.display = "flex";
+            output.style.opacity = "0.2";
+            progressBar.value = 0;
+            progressBar.max = segments.length;
 
             for (let k = 0; k < segments.length; k++) {
                 const word = segments[k].segment;
@@ -97,52 +113,39 @@
 
                 if (/[\u4E00-\u9FFF\d]/.test(word)) {
                     let reading = "";
-
                     if (phraseFixes[word]) {
                         reading = phraseFixes[word];
                     } else {
                         reading = await getReading(word);
+                        if (word.endsWith('的な')) { reading = reading.replace(/まと$/, 'てき').replace(/てき$/, 'てき'); }
+                        else if (word.endsWith('的')) { reading = reading.replace(/まと$/, 'てき').replace(/てき$/, 'てき'); }
                         
-                        // 「〜的」の修正：「まと」を「てき」へ
-                        if (word.endsWith('的')) {
-                            reading = reading.replace(/まと$/, 'てき').replace(/てき$/, 'てき'); 
-                            if (!reading.endsWith('てき')) reading = reading.slice(0, -1) + 'てき';
-                        }
-
-                        // 「間」の文脈補正
                         if (word === "間") {
-                            if (nextWord === "に" || nextWord === "の" || nextWord === "を") {
-                                reading = "あいだ";
-                            }
+                            if (nextWord === "に" || nextWord === "の" || nextWord === "を") { reading = "あいだ"; }
                         }
                     }
                     
-                    // 送り仮名分離
                     let i = word.length - 1;
                     let j = reading.length - 1;
-                    while (i >= 0 && j >= 0 && word[i] === reading[j] && !/[\u4E00-\u9FFF]/.test(word[i])) {
-                        i--; j--;
-                    }
+                    while (i >= 0 && j >= 0 && word[i] === reading[j] && !/[\u4E00-\u9FFF]/.test(word[i])) { i--; j--; }
                     
                     let kanjiPart = word.substring(0, i + 1);
                     const okuriganaPart = word.substring(i + 1);
                     let kanjiReading = reading.substring(0, j + 1);
 
-                    if (kanjiPart.length === 1 && verbFixes[kanjiPart]) {
-                        kanjiReading = verbFixes[kanjiPart];
-                    }
-
-                    if (kanjiPart) {
-                        htmlResult += `<ruby>${kanjiPart}<rt contenteditable="true">${kanjiReading}</rt></ruby>${okuriganaPart}`;
-                    } else {
-                        htmlResult += word;
-                    }
+                    if (kanjiPart.length === 1 && verbFixes[kanjiPart]) { kanjiReading = verbFixes[kanjiPart]; }
+                    if (kanjiPart) { htmlResult += `<ruby>${kanjiPart}<rt contenteditable="true">${kanjiReading}</rt></ruby>${okuriganaPart}`; }
+                    else { htmlResult += word; }
                 } else {
                     htmlResult += word;
                 }
+                // バーを更新
+                progressBar.value = k + 1;
             }
+
             output.innerHTML = htmlResult;
-            status.innerText = "✅ できたよ！";
+            output.style.opacity = "1";
+            overlay.style.display = "none";
         }
 
         async function getReading(word) {
@@ -151,11 +154,8 @@
                 const response = await fetch(url);
                 const data = await response.json();
                 let romaji = (data[0] && data[0][0] && data[0][0][3]) ? data[0][0][3] : "";
-                
-                // 不要な記号（〜や-など）を削除し、長母音を補正
                 let fixed = romaji.toLowerCase().replace(/[~~\-ー]/g, '');
                 Object.keys(romajiMap).forEach(key => { fixed = fixed.split(key).join(romajiMap[key]); });
-                
                 return wanakana.toHiragana(fixed);
             } catch { return ""; }
         }
@@ -170,9 +170,7 @@
             alert("コピーしたよ！");
         }
 
-        function clearAll() {
-            input.value = ""; output.innerHTML = ""; status.innerText = ""; input.focus();
-        }
+        function clearAll() { input.value = ""; output.innerHTML = ""; overlay.style.display = "none"; input.focus(); }
     </script>
 </body>
 </html>
