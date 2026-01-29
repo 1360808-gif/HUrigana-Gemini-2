@@ -33,8 +33,8 @@
         <div class="info-pane">
             <h1>✨ ふりがなマジック</h1>
             <div class="notice">
-                ⚠️ <strong>ちゅうい：</strong>ふりがなを クリックすると じぶんで なおせるよ！<br>
-                💡 <strong>新きのう：</strong>「心理的」や「絶体絶命」などの むずかしい読みも 得意になったよ。
+                ⚠️ <strong>ちゅうい：</strong>つけられた ふりがなは、まちがっている ときが あります。おかしいなと おもったら、せんせいや ともだちに きいて みてね。<br>
+                💡 <strong>ヒント：</strong>まちがっている ふりがなは、クリックすると じぶんで なおすことも できるよ！
             </div>
         </div>
         <div class="input-pane">
@@ -58,17 +58,17 @@
         const status = document.getElementById('status');
         let timer;
 
-        // 特殊なパッチ：四字熟語や特殊な言葉
+        // 特殊なパッチ：読み間違いが多い熟語
         const phraseFixes = {
             '絶体絶命': 'ぜったいぜつめい',
             '絶対絶命': 'ぜったいぜつめい',
             '絶対絶名': 'ぜったいぜつめい',
+            '絶命': 'ぜつめい',
             '一期一会': 'いちごいちえ',
             '一生懸命': 'いっしょうけんめい',
             '束の間': 'つかのま'
         };
 
-        // 漢字1文字の基本読み
         const verbFixes = {
             '言': 'い', '知': 'し', '出': 'で', '分': 'わ', '見': 'み', 
             '生': 'い', '行': 'い', '思': 'おも', '書': 'か', '読': 'よ',
@@ -98,27 +98,26 @@
                 if (/[\u4E00-\u9FFF\d]/.test(word)) {
                     let reading = "";
 
-                    // 1. 固定フレーズチェック
                     if (phraseFixes[word]) {
                         reading = phraseFixes[word];
                     } else {
                         reading = await getReading(word);
                         
-                        // 2. 接尾辞「的（てき）」の強制補正
-                        if (word.endsWith('的') && !reading.endsWith('てき')) {
-                            reading = reading.replace(/.*$/, (m) => m.slice(0, -1) + 'てき');
+                        // 「〜的」の修正：「まと」を「てき」へ
+                        if (word.endsWith('的')) {
+                            reading = reading.replace(/まと$/, 'てき').replace(/てき$/, 'てき'); 
+                            if (!reading.endsWith('てき')) reading = reading.slice(0, -1) + 'てき';
                         }
 
-                        // 3. 「間」の文脈補正
+                        // 「間」の文脈補正
                         if (word === "間") {
-                            // 「間に」「間の」などの場合は「あいだ」
                             if (nextWord === "に" || nextWord === "の" || nextWord === "を") {
                                 reading = "あいだ";
                             }
                         }
                     }
                     
-                    // 送り仮名分離ロジック
+                    // 送り仮名分離
                     let i = word.length - 1;
                     let j = reading.length - 1;
                     while (i >= 0 && j >= 0 && word[i] === reading[j] && !/[\u4E00-\u9FFF]/.test(word[i])) {
@@ -129,7 +128,6 @@
                     const okuriganaPart = word.substring(i + 1);
                     let kanjiReading = reading.substring(0, j + 1);
 
-                    // 漢字1文字パッチ
                     if (kanjiPart.length === 1 && verbFixes[kanjiPart]) {
                         kanjiReading = verbFixes[kanjiPart];
                     }
@@ -153,8 +151,11 @@
                 const response = await fetch(url);
                 const data = await response.json();
                 let romaji = (data[0] && data[0][0] && data[0][0][3]) ? data[0][0][3] : "";
-                let fixed = romaji.toLowerCase().replace(/-/g, '');
+                
+                // 不要な記号（〜や-など）を削除し、長母音を補正
+                let fixed = romaji.toLowerCase().replace(/[~~\-ー]/g, '');
                 Object.keys(romajiMap).forEach(key => { fixed = fixed.split(key).join(romajiMap[key]); });
+                
                 return wanakana.toHiragana(fixed);
             } catch { return ""; }
         }
