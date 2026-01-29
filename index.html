@@ -78,10 +78,11 @@
         const status = document.getElementById('status');
         let timer;
 
-        // APIが音読みで間違えやすい漢字の「動詞パッチ」
+        // 音読み・訓読みの間違いを直すパッチリスト
         const verbFixes = {
             '言': 'い', '知': 'し', '出': 'で', '分': 'わ', '見': 'み', 
-            '生': 'い', '行': 'い', '思': 'おも', '書': 'か', '読': 'よ'
+            '生': 'い', '行': 'い', '思': 'おも', '書': 'か', '読': 'よ',
+            '外': 'はず', '信': 'しん', '話': 'はな', '聞': 'き', '待': 'ま'
         };
 
         const romajiMap = { 'ā': 'aa', 'ī': 'ii', 'ū': 'uu', 'ē': 'ei', 'ō': 'ou' };
@@ -105,7 +106,6 @@
                 if (/[\u4E00-\u9FFF\d]/.test(word)) {
                     let reading = await getReading(word);
                     
-                    // うしろから一致するひらがな（送り仮名）を探す
                     let i = word.length - 1;
                     let j = reading.length - 1;
                     while (i >= 0 && j >= 0 && word[i] === reading[j] && !/[\u4E00-\u9FFF]/.test(word[i])) {
@@ -116,13 +116,9 @@
                     const okuriganaPart = word.substring(i + 1);
                     let kanjiReading = reading.substring(0, j + 1);
 
-                    // --- 動詞パッチ適用 ---
-                    // 漢字部分が1文字で、かつ間違いやすいリストにある場合、読みを修正
+                    // パッチ適用：リストにある漢字1文字の場合、読みを上書き
                     if (kanjiPart.length === 1 && verbFixes[kanjiPart]) {
-                        // APIが音読み（例：「言」を「げん」）を返してきたら修正
-                        if (kanjiReading !== verbFixes[kanjiPart]) {
-                            kanjiReading = verbFixes[kanjiPart];
-                        }
+                        kanjiReading = verbFixes[kanjiPart];
                     }
 
                     if (kanjiPart) {
