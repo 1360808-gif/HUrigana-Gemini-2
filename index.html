@@ -6,9 +6,8 @@
     <title>ふりがなマジック！</title>
     <script src="https://unpkg.com/wanakana"></script>
     <style>
-        /* 見た目は前回と同じなので安心してください */
         body {
-            font-family: "UD Digi Kyokasho N-R", "UD デジタル 教科書体 N-R", "Hiragino Sans", sans-serif;
+            font-family: "UD Digi Kyokasho N-R", "UD デジタル 教科書体 N-R", "UD Digi Kyokasho NK-R", "UD デジタル 教科書体 NK-R", "Hiragino Sans", "Meiryo", sans-serif;
             background-color: #fcfcfc; margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; color: #333;
         }
         header { flex: 1; display: flex; padding: 15px 20px; gap: 20px; background-color: #eef9ff; border-bottom: 2px solid #a6dcef; box-sizing: border-box; }
@@ -17,34 +16,41 @@
         .notice { background: white; padding: 10px; border-radius: 10px; border: 2px solid #ffcc00; font-size: 0.85rem; line-height: 1.6; }
         .input-pane { flex: 1; display: flex; }
         textarea { width: 100%; height: 100%; border: 2px solid #a6dcef; border-radius: 12px; padding: 12px; font-family: inherit; font-size: 16px; resize: none; box-sizing: border-box; outline: none; }
+        
         main { flex: 2; padding: 20px 40px; overflow-y: auto; background: white; box-sizing: border-box; position: relative; }
-        #output { font-size: 24px; line-height: 2.3; word-break: break-all; }
+        #output { font-size: 24px; line-height: 2.3; word-break: break-all; transition: opacity 0.3s; }
         rt { color: #d9534f; font-size: 0.5em; font-weight: bold; cursor: pointer; padding: 0 2px; }
+        rt:hover { background: #ffebeb; border-radius: 3px; }
+
         #status-overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(255, 255, 255, 0.9);
             display: none; flex-direction: column; align-items: center; justify-content: center;
             z-index: 100;
         }
-        #status-text { font-size: 2rem; font-weight: bold; color: #1a73e8; margin-bottom: 20px; }
-        progress { width: 60%; height: 25px; }
+        #status-text { font-size: 2rem; font-weight: bold; color: #1a73e8; margin-bottom: 20px; text-shadow: 1px 1px 0 white; }
+        progress { width: 60%; height: 25px; appearance: none; border: none; }
+        progress::-webkit-progress-bar { background-color: #eee; border-radius: 20px; }
+        progress::-webkit-progress-value { background-color: #ff9f43; border-radius: 20px; transition: width 0.1s; }
+
         .tools { position: fixed; bottom: 15px; right: 20px; display: flex; gap: 10px; }
-        .btn { background: #ff9f43; color: white; border: none; padding: 10px 20px; border-radius: 50px; font-weight: bold; cursor: pointer; box-shadow: 0 3px 0 #e67e22; }
+        .btn { background: #ff9f43; color: white; border: none; padding: 10px 20px; border-radius: 50px; font-family: inherit; font-weight: bold; cursor: pointer; box-shadow: 0 3px 0 #e67e22; font-size: 0.9rem; }
+        .btn:active { transform: translateY(2px); box-shadow: none; }
         .btn.copy { background: #1a73e8; box-shadow: 0 3px 0 #0d47a1; }
     </style>
 </head>
 <body>
+
     <header>
         <div class="info-pane">
             <h1>✨ ふりがなマジック</h1>
             <div class="notice">
-                ⚠️ <strong>ちゅうい：</strong><br>
-                1. 「知って」は「しって」と読みます。<br>
-                2. おかしいな？と思ったらクリックで直せます。
+                ⚠️ <strong>ちゅうい：</strong>つけられた ふりがなは、まちがっている ときが あります。おかしいなと おもったら、せんせいや ともだちに きいて みてね。<br>
+                💡 <strong>ヒント：</strong>まちがっている ふりがなは、クリックすると じぶんで なおすことも できるよ！
             </div>
         </div>
         <div class="input-pane">
-            <textarea id="input" placeholder="文章をここに入力してね"></textarea>
+            <textarea id="input" placeholder="ここに、ふりがなを つけたい 文章を はりつけてね！"></textarea>
         </div>
     </header>
 
@@ -57,7 +63,7 @@
     </main>
 
     <div class="tools">
-        <button class="btn copy" onclick="copyOutput()">📋 コピー</button>
+        <button class="btn copy" onclick="copyOutput()">📋 ふりがなつきで コピー</button>
         <button class="btn" onclick="clearAll()">🔄 ぜんぶけす</button>
     </div>
 
@@ -68,19 +74,12 @@
         const progressBar = document.getElementById('progress-bar');
         let timer;
 
-        // 【最強の指名手配リスト】
-        // ここに書いた単語は、問答無用でこの読みに変換します。
+        // 強制上書き辞書
         const priorityDictionary = {
-            '知って': 'しって',   // ← 今回の最重要ターゲット
-            '知っている': 'しっている',
-            
-            // ついでに前回の防御も維持
-            '裏切': 'うらぎ',
-            '自主練': 'じしゅれん',
-            '絶命': 'ぜつめい'
+            '知って': 'しって',
+            '知っている': 'しっている'
         };
 
-        // 1文字の動詞の読み間違い防止
         const verbFixes = {
             '言': 'い', '知': 'し', '出': 'で', '分': 'わ', '見': 'み', 
             '生': 'い', '行': 'い', '思': 'おも', '書': 'か', '読': 'よ'
@@ -101,6 +100,7 @@
             let htmlResult = "";
             
             overlay.style.display = "flex";
+            output.style.opacity = "0.2";
             progressBar.value = 0;
             progressBar.max = segments.length;
 
@@ -108,31 +108,20 @@
                 let word = segments[k].segment;
                 let reading = "";
 
-                if (/[\u4E00-\u9FFF\d]/.test(word)) { // 漢字か数字が含まれる場合
-                    
-                    // ★ステップ1：指名手配リストのチェック
-                    // その単語がリストにあるか、またはリストの言葉で始まっているか確認
+                if (/[\u4E00-\u9FFF\d]/.test(word)) {
+                    // 辞書チェック
                     let hit = Object.keys(priorityDictionary).find(key => word.startsWith(key));
                     
                     if (hit) {
-                        // リストにあったら、登録された読みを使う！
                         const baseReading = priorityDictionary[hit];
                         const suffix = word.substring(hit.length);
-                        // 残りの部分（あれば）の読みを取得
                         const suffixReading = suffix ? await getReading(suffix) : "";
                         reading = baseReading + suffixReading;
                     } else {
-                        // リストになければ、通常通りAPIに聞く
                         reading = await getReading(word);
                     }
 
-                    // ★ステップ2：力づくの修正（念のため）
-                    if (word.includes('裏切')) reading = reading.replace(/うらせつ|りせつ/g, 'うらぎ');
-                    if (word.includes('自主練')) reading = 'じしゅれん';
-                    // 「知って」が万が一変な読みで来ても、ここでもキャッチする
-                    if (word === '知って' && reading !== 'しって') reading = 'しって'; 
-
-                    // 送り仮名処理
+                    // 送り仮名分離ロジック
                     let i = word.length - 1;
                     let j = reading.length - 1;
                     while (i >= 0 && j >= 0 && word[i] === reading[j] && !/[\u4E00-\u9FFF]/.test(word[i])) { i--; j--; }
@@ -141,14 +130,10 @@
                     const okuriganaPart = word.substring(i + 1);
                     let kanjiReading = reading.substring(0, j + 1);
 
-                    // 1文字動詞の補正
                     if (kanjiPart.length === 1 && verbFixes[kanjiPart]) { kanjiReading = verbFixes[kanjiPart]; }
-
-                    if (kanjiPart) { 
-                        htmlResult += `<ruby>${kanjiPart}<rt contenteditable="true">${kanjiReading}</rt></ruby>${okuriganaPart}`; 
-                    } else { 
-                        htmlResult += word; 
-                    }
+                    
+                    if (kanjiPart) { htmlResult += `<ruby>${kanjiPart}<rt contenteditable="true">${kanjiReading}</rt></ruby>${okuriganaPart}`; }
+                    else { htmlResult += word; }
                 } else {
                     htmlResult += word;
                 }
@@ -156,23 +141,19 @@
             }
 
             output.innerHTML = htmlResult;
+            output.style.opacity = "1";
             overlay.style.display = "none";
         }
 
         async function getReading(word) {
             try {
-                // APIへの問い合わせ
                 const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=ja&tl=ja&dt=rm&q=${encodeURIComponent(word)}`;
                 const response = await fetch(url);
                 const data = await response.json();
                 let romaji = (data[0] && data[0][0] && data[0][0][3]) ? data[0][0][3] : "";
-                
-                // ローマ字をひらがなに変換
                 let fixed = romaji.toLowerCase().replace(/[~~\-ー]/g, '');
-                // 長音記号の処理
                 const romajiMap = { 'ā': 'aa', 'ī': 'ii', 'ū': 'uu', 'ē': 'ei', 'ō': 'ou' };
                 Object.keys(romajiMap).forEach(key => { fixed = fixed.split(key).join(romajiMap[key]); });
-                
                 return wanakana.toHiragana(fixed);
             } catch { return ""; }
         }
@@ -184,7 +165,7 @@
             selection.removeAllRanges();
             selection.addRange(range);
             document.execCommand('copy');
-            alert("コピーしました！");
+            alert("コピーしたよ！");
         }
 
         function clearAll() { input.value = ""; output.innerHTML = ""; overlay.style.display = "none"; input.focus(); }
