@@ -74,10 +74,11 @@
         const progressBar = document.getElementById('progress-bar');
         let timer;
 
-        // 強力な読み修正辞書
+        // 【ここが重要】バラバラにされると困る言葉リスト
         const phraseFixes = {
+            '自主練': 'じしゅれん', // 「自主」と「練」が合体したらこう読む！
             '絶体絶命': 'ぜったいぜつめい', '絶対絶命': 'ぜったいぜつめい', '絶命': 'ぜつめい',
-            '裏切': 'うらぎ', '自主練': 'じしゅれん', '自主': 'じしゅ', '言われた': 'いわれた',
+            '裏切': 'うらぎ', '言われた': 'いわれた',
             '一期一会': 'いちごいちえ', '一生懸命': 'いっしょうけんめい', '束の間': 'つかのま'
         };
 
@@ -113,13 +114,21 @@
             progressBar.max = segments.length;
 
             for (let k = 0; k < segments.length; k++) {
-                const word = segments[k].segment;
-                const nextWord = segments[k+1] ? segments[k+1].segment : "";
+                let word = segments[k].segment;
+                let nextWord = segments[k+1] ? segments[k+1].segment : "";
+                
+                // 【新機能】合体ロジック！
+                // 「今の言葉」＋「次の言葉」をくっつけて辞書にあるかチェック
+                let combinedWord = word + nextWord;
+                let reading = "";
 
-                if (/[\u4E00-\u9FFF\d]/.test(word)) {
-                    let reading = "";
-                    
-                    // 1. パッチリストのチェック（自主練、知って、裏切、言われたなど）
+                if (phraseFixes[combinedWord]) {
+                    // 合体成功！「自主練」などが見つかった場合
+                    word = combinedWord; // 言葉を合体させる
+                    reading = phraseFixes[combinedWord];
+                    k++; // 次の言葉（「練」など）は処理済みとしてスキップする
+                } else if (/[\u4E00-\u9FFF\d]/.test(word)) {
+                    // 通常の単語処理
                     let matchedPatch = Object.keys(phraseFixes).find(p => word.startsWith(p)) || 
                                        Object.keys(priorityDictionary).find(p => word.startsWith(p));
                     
@@ -129,18 +138,20 @@
                         reading = baseReading + (suffix ? await getReading(suffix) : "");
                     } else {
                         reading = await getReading(word);
-                        
-                        // 2. 「的」の修正
                         if (word.includes('的な')) { reading = reading.replace(/まときな/g, 'てきな'); }
                         else if (word.includes('的')) { reading = reading.replace(/まと/g, 'てき'); }
                         
-                        // 3. 「間」の文脈補正
                         if (word === "間") {
                             if (nextWord === "に" || nextWord === "の" || nextWord === "を") { reading = "あいだ"; }
                         }
                     }
-                    
-                    // 4. 送り仮名分離ロジック
+                } else {
+                    htmlResult += word;
+                    continue; // 漢字がない言葉はそのまま出して次へ
+                }
+
+                if (reading) {
+                     // 送り仮名分離ロジック
                     let i = word.length - 1;
                     let j = reading.length - 1;
                     while (i >= 0 && j >= 0 && word[i] === reading[j] && !/[\u4E00-\u9FFF]/.test(word[i])) { i--; j--; }
@@ -153,9 +164,8 @@
                     
                     if (kanjiPart) { htmlResult += `<ruby>${kanjiPart}<rt contenteditable="true">${kanjiReading}</rt></ruby>${okuriganaPart}`; }
                     else { htmlResult += word; }
-                } else {
-                    htmlResult += word;
                 }
+
                 progressBar.value = k + 1;
             }
 
