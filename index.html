@@ -74,7 +74,13 @@
         const progressBar = document.getElementById('progress-bar');
         let timer;
 
-        // 強制上書き辞書
+        // 強力な読み修正辞書
+        const phraseFixes = {
+            '絶体絶命': 'ぜったいぜつめい', '絶対絶命': 'ぜったいぜつめい', '絶命': 'ぜつめい',
+            '裏切': 'うらぎ', '自主練': 'じしゅれん', '自主': 'じしゅ', '言われた': 'いわれた',
+            '一期一会': 'いちごいちえ', '一生懸命': 'いっしょうけんめい', '束の間': 'つかのま'
+        };
+
         const priorityDictionary = {
             '知って': 'しって',
             '知っている': 'しっている'
@@ -82,9 +88,11 @@
 
         const verbFixes = {
             '言': 'い', '知': 'し', '出': 'で', '分': 'わ', '見': 'み', 
-            '生': 'い', '行': 'い', '思': 'おも', '書': 'か', '読': 'よ'
+            '生': 'い', '行': 'い', '思': 'おも', '書': 'か', '読': 'よ',
+            '外': 'はず', '信': 'しん', '話': 'はな', '聞': 'き', '待': 'ま'
         };
 
+        const romajiMap = { 'ā': 'aa', 'ī': 'ii', 'ū': 'uu', 'ē': 'ei', 'ō': 'ou' };
         const segmenter = new Intl.Segmenter('ja-JP', { granularity: 'word' });
 
         input.addEventListener('input', () => {
@@ -105,23 +113,34 @@
             progressBar.max = segments.length;
 
             for (let k = 0; k < segments.length; k++) {
-                let word = segments[k].segment;
-                let reading = "";
+                const word = segments[k].segment;
+                const nextWord = segments[k+1] ? segments[k+1].segment : "";
 
                 if (/[\u4E00-\u9FFF\d]/.test(word)) {
-                    // 辞書チェック
-                    let hit = Object.keys(priorityDictionary).find(key => word.startsWith(key));
+                    let reading = "";
                     
-                    if (hit) {
-                        const baseReading = priorityDictionary[hit];
-                        const suffix = word.substring(hit.length);
-                        const suffixReading = suffix ? await getReading(suffix) : "";
-                        reading = baseReading + suffixReading;
+                    // 1. パッチリストのチェック（自主練、知って、裏切、言われたなど）
+                    let matchedPatch = Object.keys(phraseFixes).find(p => word.startsWith(p)) || 
+                                       Object.keys(priorityDictionary).find(p => word.startsWith(p));
+                    
+                    if (matchedPatch) {
+                        const baseReading = phraseFixes[matchedPatch] || priorityDictionary[matchedPatch];
+                        const suffix = word.substring(matchedPatch.length);
+                        reading = baseReading + (suffix ? await getReading(suffix) : "");
                     } else {
                         reading = await getReading(word);
+                        
+                        // 2. 「的」の修正
+                        if (word.includes('的な')) { reading = reading.replace(/まときな/g, 'てきな'); }
+                        else if (word.includes('的')) { reading = reading.replace(/まと/g, 'てき'); }
+                        
+                        // 3. 「間」の文脈補正
+                        if (word === "間") {
+                            if (nextWord === "に" || nextWord === "の" || nextWord === "を") { reading = "あいだ"; }
+                        }
                     }
-
-                    // 送り仮名分離ロジック
+                    
+                    // 4. 送り仮名分離ロジック
                     let i = word.length - 1;
                     let j = reading.length - 1;
                     while (i >= 0 && j >= 0 && word[i] === reading[j] && !/[\u4E00-\u9FFF]/.test(word[i])) { i--; j--; }
@@ -152,7 +171,6 @@
                 const data = await response.json();
                 let romaji = (data[0] && data[0][0] && data[0][0][3]) ? data[0][0][3] : "";
                 let fixed = romaji.toLowerCase().replace(/[~~\-ー]/g, '');
-                const romajiMap = { 'ā': 'aa', 'ī': 'ii', 'ū': 'uu', 'ē': 'ei', 'ō': 'ou' };
                 Object.keys(romajiMap).forEach(key => { fixed = fixed.split(key).join(romajiMap[key]); });
                 return wanakana.toHiragana(fixed);
             } catch { return ""; }
